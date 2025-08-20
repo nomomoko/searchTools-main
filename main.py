@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import sys
 import os
 # 添加 src 路径到搜索路径
@@ -12,7 +15,7 @@ import asyncio
 import json
 
 from searchtools.async_parallel_search_manager import \
-    AsyncParallelSearchManager
+    AsyncParallelSearchManager 
 from searchtools.models import SearchResult
 
 
