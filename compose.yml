@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    ports:
+      - "38242:8000"
+    restart: always
+    # env_file:
+    #   - .env
+
