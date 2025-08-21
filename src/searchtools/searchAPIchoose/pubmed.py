@@ -4,6 +4,7 @@ This is a simplified version focusing on the main search functionality.
 """
 
 import logging
+import os
 from typing import Iterator, List, Optional
 from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
 
@@ -137,8 +138,12 @@ class PubMedAPIWrapper(BaseModel):
             "usehistory": "y",
             "email": self.email,
             "tool": "searchtools",  # 添加工具标识符
-            "api_key": "",  # 预留API密钥字段
         }
+
+        # 只有在有API密钥时才添加
+        api_key = os.getenv("NCBI_API_KEY") or os.getenv("PUBMED_API_KEY")
+        if api_key:
+            params["api_key"] = api_key
 
         try:
             logger.info(f"[PubMed] Searching for: {query[:100]}...")
