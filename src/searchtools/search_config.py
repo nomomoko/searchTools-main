@@ -38,6 +38,14 @@ class SearchAPIConfig(BaseModel):
     page_size: int = Field(default=10,
                            description="Results per page for paginated APIs")
 
+    # Preprint filtering settings (for BioRxiv/MedRxiv)
+    use_advanced_filter: bool = Field(default=True,
+                                     description="Use advanced filtering for preprints")
+    filter_days_back: int = Field(default=30,
+                                 description="Filter papers from last N days")
+    min_relevance_score: float = Field(default=0.5,
+                                      description="Minimum relevance score for filtering")
+
     # Rate limiting
     rate_limit_delay: float = Field(
         default=0.2, description="Delay between requests in seconds")

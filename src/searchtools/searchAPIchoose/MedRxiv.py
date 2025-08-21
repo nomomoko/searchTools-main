@@ -45,14 +45,35 @@ class MedRxivAPIWrapper:
                 break
         return all_papers
 
-    def filter_papers_by_query(self, papers, query):
+    def filter_papers_by_query(self, papers, query, use_advanced_filter=True):
+        """
+        根据关键词过滤论文，支持简单和高级过滤模式。
+
+        Args:
+            papers: 论文列表
+            query: 搜索查询
+            use_advanced_filter: 是否使用高级过滤（默认True）
+
+        Returns:
+            过滤后的论文列表
+        """
         if not query:
             return papers
-        query_lower = query.lower()
-        filtered = []
-        for paper in papers:
-            title = paper.get("title", "").lower()
-            abstract = paper.get("abstract", "").lower()
-            if query_lower in title or query_lower in abstract:
-                filtered.append(paper)
-        return filtered
+
+        if use_advanced_filter:
+            # 使用智能过滤器
+            from ..preprint_filter import get_preprint_filter
+            filter_instance = get_preprint_filter()
+            return filter_instance.advanced_filter(
+                papers, query, max_results=self.max_results, days_back=30
+            )
+        else:
+            # 使用简单过滤器（向后兼容）
+            query_lower = query.lower()
+            filtered = []
+            for paper in papers:
+                title = paper.get("title", "").lower()
+                abstract = paper.get("abstract", "").lower()
+                if query_lower in title or query_lower in abstract:
+                    filtered.append(paper)
+            return filtered

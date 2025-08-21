@@ -70,25 +70,46 @@ class AsyncMedRxivAPIWrapper:
         return all_papers
 
     def filter_papers_by_query(self, papers: List[dict],
-                               query: str) -> List[dict]:
+                               query: str, use_advanced_filter: bool = True) -> List[dict]:
         """
-        根据关键词过滤论文，标题或摘要包含query即保留。
+        根据关键词过滤论文，支持简单和高级过滤模式。
 
-        注：这个方法不需要异步，因为是纯计算操作
+        Args:
+            papers: 论文列表
+            query: 搜索查询
+            use_advanced_filter: 是否使用高级过滤（默认True）
+
+        Returns:
+            过滤后的论文列表
         """
         if not query:
             return papers
 
-        query_lower = query.lower()
-        filtered = []
+        if use_advanced_filter:
+            # 使用智能过滤器
+            from ..preprint_filter import get_preprint_filter
+            from ..search_config import get_api_config
 
-        for paper in papers:
-            title = paper.get("title", "").lower()
-            abstract = paper.get("abstract", "").lower()
-            if query_lower in title or query_lower in abstract:
-                filtered.append(paper)
+            config = get_api_config("medrxiv")
+            filter_instance = get_preprint_filter()
+            return filter_instance.advanced_filter(
+                papers, query,
+                max_results=self.max_results,
+                days_back=getattr(config, 'filter_days_back', 30),
+                min_score=getattr(config, 'min_relevance_score', 0.5)
+            )
+        else:
+            # 使用简单过滤器（向后兼容）
+            query_lower = query.lower()
+            filtered = []
 
-        return filtered
+            for paper in papers:
+                title = paper.get("title", "").lower()
+                abstract = paper.get("abstract", "").lower()
+                if query_lower in title or query_lower in abstract:
+                    filtered.append(paper)
+
+            return filtered
 
     async def run(self, query: str, days_back: int = 30) -> List[dict]:
         """
@@ -110,9 +131,18 @@ class AsyncMedRxivAPIWrapper:
             papers = await self.fetch_medrxiv_papers(
                 start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
 
-            # 过滤论文
+            # 过滤论文（根据配置决定是否使用高级过滤器）
+            from ..search_config import get_api_config
+            config = get_api_config("medrxiv")
+            use_advanced = getattr(config, 'use_advanced_filter', True)
+
             if query:
-                papers = self.filter_papers_by_query(papers, query)
+                papers = self.filter_papers_by_query(papers, query, use_advanced_filter=use_advanced)
+            else:
+                # 即使没有查询，也应用质量过滤
+                from ..preprint_filter import get_preprint_filter
+                filter_instance = get_preprint_filter()
+                papers = filter_instance.filter_by_quality(papers)
 
             # 转换为统一格式
             results = []
