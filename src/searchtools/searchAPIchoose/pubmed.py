@@ -5,7 +5,7 @@ This is a simplified version focusing on the main search functionality.
 
 import logging
 from typing import Iterator, List, Optional
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
 
 from pydantic import BaseModel, Field
 from ..http_client import SearchHTTPClient
