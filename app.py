@@ -207,6 +207,7 @@ async def root():
                 document.getElementById('stats').style.display = 'none';
                 
                 try {
+                    console.log('开始搜索:', query);
                     const response = await fetch('/search', {
                         method: 'POST',
                         headers: {
@@ -217,17 +218,18 @@ async def root():
                             max_results: 50
                         })
                     });
-                    
+
+                    console.log('响应状态:', response.status);
                     if (!response.ok) {
-                        throw new Error('搜索请求失败');
+                        throw new Error(`搜索请求失败: ${response.status} ${response.statusText}`);
                     }
                     
                     const data = await response.json();
                     displayResults(data);
                 } catch (error) {
                     console.error('搜索错误:', error);
-                    document.getElementById('results').innerHTML = 
-                        '<div class="loading">搜索失败，请重试</div>';
+                    document.getElementById('results').innerHTML =
+                        `<div class="loading">搜索失败，请重试<br>错误详情: ${error.message}</div>`;
                 }
             }
             
@@ -274,10 +276,10 @@ async def root():
                 resultsDiv.innerHTML = resultsHTML;
             }
             
-            // 页面加载完成后自动搜索默认关键词
-            window.onload = function() {
-                performSearch();
-            };
+            // 页面加载完成后自动搜索默认关键词（暂时禁用）
+            // window.onload = function() {
+            //     performSearch();
+            // };
         </script>
     </body>
     </html>
