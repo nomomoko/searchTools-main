@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SearchTools Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .search-box { margin: 20px 0; }
+        .search-input { width: 300px; padding: 10px; }
+        .search-button { padding: 10px 20px; margin-left: 10px; }
+        .result { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SearchTools 测试页面</h1>
+        
+        <div class="search-box">
+            <input type="text" id="searchInput" class="search-input" placeholder="输入搜索关键词" value="test">
+            <button onclick="testSearch()" class="search-button">搜索</button>
+        </div>
+        
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        async function testSearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            const resultDiv = document.getElementById('result');
+            
+            if (!query) {
+                resultDiv.innerHTML = '<div class="error">请输入搜索关键词</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div>正在搜索中...</div>';
+            
+            try {
+                console.log('开始搜索:', query);
+                
+                const response = await fetch('http://localhost:8000/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        max_results: 3
+                    })
+                });
+                
+                console.log('响应状态:', response.status);
+                console.log('响应头:', response.headers);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('响应数据:', data);
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h3>搜索成功！</h3>
+                        <p><strong>查询:</strong> ${data.query}</p>
+                        <p><strong>结果数量:</strong> ${data.total_results}</p>
+                        <p><strong>搜索时间:</strong> ${data.search_time}秒</p>
+                        <h4>前3个结果:</h4>
+                        ${data.results.slice(0, 3).map(result => `
+                            <div style="border: 1px solid #ddd; margin: 10px 0; padding: 10px;">
+                                <h5>${result.title}</h5>
+                                <p><strong>作者:</strong> ${result.authors}</p>
+                                <p><strong>期刊:</strong> ${result.journal} (${result.year})</p>
+                                <p><strong>来源:</strong> ${result.source}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+            } catch (error) {
+                console.error('搜索错误:', error);
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h3>搜索失败</h3>
+                        <p><strong>错误信息:</strong> ${error.message}</p>
+                        <p>请检查浏览器控制台获取更多详细信息</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // 页面加载完成后自动执行一次搜索
+        window.onload = function() {
+            console.log('页面加载完成，开始测试搜索...');
+            testSearch();
+        };
+    </script>
+</body>
+</html>

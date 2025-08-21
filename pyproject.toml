@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "searchtools"
+version = "0.1.0"
+description = "学术搜索工具包"
+readme = "README.md"
+authors = [
+    { name = "EasonBZ", email = "mas_baize@icloud.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.116.1",
+    "httpx>=0.28.1",
+    "langchain>=0.3.27",
+    "langchain-core>=0.3.72",
+    "pydantic>=2.11.7",
+    "python-dateutil>=2.9.0.post0",
+    "tenacity>=8.2.0",
+    "typer>=0.16.0",
+    "uvicorn>=0.35.0",
+    "xmltodict>=0.14.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/searchtools"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12.9",
+]
