@@ -323,21 +323,8 @@ async def search_and_deduplicate(request: SearchRequest):
             if hasattr(source_result, "error") and source_result.error:
                 continue
 
-            for result_data in getattr(source_result, "results", []):
-                search_result = SearchResult(
-                    title=result_data.get("title", ""),
-                    authors=result_data.get("authors", ""),
-                    journal=result_data.get("journal", ""),
-                    year=result_data.get("year"),
-                    citations=result_data.get("citations"),
-                    doi=result_data.get("doi", ""),
-                    pmid=result_data.get("pmid", ""),
-                    pmcid=result_data.get("pmcid", ""),
-                    published_date=result_data.get("published_date", ""),
-                    url=result_data.get("url", ""),
-                    abstract=result_data.get("abstract", ""),
-                    source=source_name,
-                )
+            # source_result.results 已经是 SearchResult 对象列表，不需要再转换
+            for search_result in getattr(source_result, "results", []):
                 all_results.append(search_result)
 
         # 执行去重
