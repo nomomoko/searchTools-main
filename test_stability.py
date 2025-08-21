@@ -133,36 +133,67 @@ def test_individual_apis():
     """测试单个API的稳定性"""
     print("\n🔧 测试单个API稳定性")
     print("=" * 60)
-    
+
     # 测试PubMed API
     print("📚 测试PubMed API...")
     try:
         from searchtools.searchAPIchoose.pubmed import PubMedAPIWrapper
         wrapper = PubMedAPIWrapper()
-        
+
         start_time = time.time()
         results = wrapper.run("diabetes")
         duration = time.time() - start_time
-        
-        print(f"  ✅ PubMed API: {len(results)} 个结果 ({duration:.2f}s)")
-        
+
+        if results:
+            print(f"  ✅ PubMed API: {len(results)} 个结果 ({duration:.2f}s)")
+            # 显示第一个结果的标题
+            if len(results) > 0 and hasattr(results[0], 'title'):
+                print(f"    示例: {results[0].title[:80]}...")
+        else:
+            print(f"  ⚠️  PubMed API: 无结果 ({duration:.2f}s)")
+
     except Exception as e:
         print(f"  ❌ PubMed API异常: {e}")
-    
+
     # 测试ClinicalTrials API
     print("🏥 测试ClinicalTrials API...")
     try:
         from searchtools.searchAPIchoose.clinical_trials import ClinicalTrialsAPIWrapper
         wrapper = ClinicalTrialsAPIWrapper()
-        
+
         start_time = time.time()
         results = wrapper.search_and_parse("diabetes", max_studies=5)
         duration = time.time() - start_time
-        
-        print(f"  ✅ ClinicalTrials API: {len(results)} 个结果 ({duration:.2f}s)")
-        
+
+        if results:
+            print(f"  ✅ ClinicalTrials API: {len(results)} 个结果 ({duration:.2f}s)")
+            # 显示第一个结果的标题
+            if len(results) > 0:
+                title = results[0].get('briefTitle', results[0].get('title', 'N/A'))
+                print(f"    示例: {title[:80]}...")
+        else:
+            print(f"  ⚠️  ClinicalTrials API: 无结果 ({duration:.2f}s)")
+
     except Exception as e:
         print(f"  ❌ ClinicalTrials API异常: {e}")
+
+    # 测试Europe PMC作为PubMed后备
+    print("🌍 测试Europe PMC (PubMed后备)...")
+    try:
+        from searchtools.searchAPIchoose.europe_pmc import EuropePMCAPIWrapper
+        wrapper = EuropePMCAPIWrapper()
+
+        start_time = time.time()
+        results = wrapper.run("diabetes")
+        duration = time.time() - start_time
+
+        if results:
+            print(f"  ✅ Europe PMC: {len(results)} 个结果 ({duration:.2f}s)")
+        else:
+            print(f"  ⚠️  Europe PMC: 无结果 ({duration:.2f}s)")
+
+    except Exception as e:
+        print(f"  ❌ Europe PMC异常: {e}")
 
 
 async def main():

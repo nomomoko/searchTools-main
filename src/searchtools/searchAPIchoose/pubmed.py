@@ -119,64 +119,91 @@ class PubMedAPIWrapper(BaseModel):
             logger.error(f"Error in lazy_load: {e}")
             return
 
+    def _search_pubmed_fallback(self, query: str) -> List[str]:
+        """
+        使用Europe PMC作为PubMed的稳定替代方案
+        """
+        try:
+            logger.info(f"[PubMed Fallback] Using Europe PMC for: {query[:100]}...")
+
+            # 使用Europe PMC的PubMed数据
+            params = {
+                "query": f"{query} AND SRC:MED",  # 限制为PubMed数据
+                "format": "json",
+                "pageSize": self.top_k_results,
+                "resultType": "core",
+                "cursorMark": "*",
+                "sort": "CITED desc",
+                "email": self.email,
+            }
+
+            response = self.http_client.get(
+                "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+                params=params
+            )
+
+            data = response.json()
+            results = data.get("resultList", {}).get("result", [])
+
+            # 提取PMID
+            pmids = []
+            for result in results:
+                pmid = result.get("pmid")
+                if pmid:
+                    pmids.append(pmid)
+
+            logger.info(f"[PubMed Fallback] Found {len(pmids)} PMIDs via Europe PMC")
+            return pmids
+
+        except Exception as e:
+            logger.error(f"[PubMed Fallback] Europe PMC search failed: {e}")
+            return []
+
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        reraise=True,
+        stop=stop_after_attempt(2),  # 减少重试次数
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        reraise=False,  # 不重新抛出异常，使用降级策略
     )
     def _search_pubmed(self, query: str) -> List[str]:
         """
         Search PubMed and return a list of article IDs.
-        增强了错误处理和速率限制。
+        增强了错误处理和降级策略。
         """
-        # 添加工具标识符以符合NCBI政策
-        params = {
-            "db": "pubmed",
-            "term": query,
-            "retmode": "json",
-            "retmax": self.top_k_results,
-            "usehistory": "y",
-            "email": self.email,
-            "tool": "searchtools",  # 添加工具标识符
-        }
-
-        # 只有在有API密钥时才添加
+        # 首先尝试直接PubMed搜索（如果有API密钥）
         api_key = os.getenv("NCBI_API_KEY") or os.getenv("PUBMED_API_KEY")
+
         if api_key:
-            params["api_key"] = api_key
+            try:
+                params = {
+                    "db": "pubmed",
+                    "term": query,
+                    "retmode": "json",
+                    "retmax": self.top_k_results,
+                    "usehistory": "y",
+                    "email": self.email,
+                    "tool": "searchtools",
+                    "api_key": api_key,
+                }
 
-        try:
-            logger.info(f"[PubMed] Searching for: {query[:100]}...")
-            response = self.http_client.get(self.base_url_esearch,
-                                            params=params)
+                logger.info(f"[PubMed] Searching with API key: {query[:100]}...")
+                response = self.http_client.get(self.base_url_esearch, params=params)
 
-            # 检查响应状态
-            if response.status_code == 429:
-                logger.warning("[PubMed] Rate limit exceeded, waiting longer...")
-                import time as _time
-                _time.sleep(2.0)  # 更长的等待时间
-                raise Exception("Rate limit exceeded")
+                if response.status_code == 200:
+                    data = response.json()
+                    if "esearchresult" in data:
+                        id_list = data.get("esearchresult", {}).get("idlist", [])
+                        logger.info(f"[PubMed] Found {len(id_list)} article IDs")
 
-            data = response.json()
+                        import time as _time
+                        _time.sleep(max(0.5, float(self.rate_limit_delay or 0.5)))
+                        return id_list
 
-            # 检查API错误
-            if "esearchresult" not in data:
-                logger.error(f"[PubMed] Unexpected response format: {data}")
-                return []
+            except Exception as e:
+                logger.warning(f"[PubMed] Direct API search failed: {e}")
 
-            # Extract IDs from the response
-            id_list = data.get("esearchresult", {}).get("idlist", [])
-            logger.info(f"[PubMed] Found {len(id_list)} article IDs")
-
-            # NCBI 友好：轻微等待，降低 429/403 风险
-            import time as _time
-            _time.sleep(max(0.5, float(self.rate_limit_delay or 0.5)))
-            return id_list
-
-        except Exception as e:
-            logger.error(f"Error searching PubMed: {e}")
-            # 不立即返回空列表，让重试机制处理
-            raise
+        # 降级到Europe PMC
+        logger.info("[PubMed] Using Europe PMC fallback strategy")
+        return self._search_pubmed_fallback(query)
 
     @retry(
         stop=stop_after_attempt(3),

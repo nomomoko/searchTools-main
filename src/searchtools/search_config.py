@@ -95,18 +95,18 @@ class SearchToolsConfig(BaseModel):
 
     clinical_trials: SearchAPIConfig = Field(
         default_factory=lambda: SearchAPIConfig(
-            enabled=False,  # 默认禁用，避免403错误影响用户体验
-            max_results=10,  # 减少结果数量提高稳定性
-            timeout=25.0,  # 增加超时时间
-            max_retries=2,  # 减少重试次数，避免过多失败请求
-            rate_limit_delay=1.0,  # 增加延迟，降低被限制的风险
+            enabled=True,  # 重新启用，使用改进的稳定搜索策略
+            max_results=10,  # 适中的结果数量
+            timeout=30.0,  # 合理的超时时间
+            max_retries=2,  # 适度的重试次数
+            rate_limit_delay=1.0,  # 保守的速率限制
         ))
 
     pubmed: SearchAPIConfig = Field(default_factory=lambda: SearchAPIConfig(
-        enabled=False,  # 默认禁用直接PubMed，优先使用Europe PMC
+        enabled=True,  # 重新启用，使用Europe PMC作为稳定后备
         max_results=5,  # 保持较小的结果数量
-        timeout=35.0,  # 增加超时时间
-        max_retries=2,  # 减少重试次数
+        timeout=30.0,  # 合理的超时时间
+        max_retries=2,  # 适度的重试次数
         rate_limit_delay=0.5,  # NCBI速率限制延迟
     ))
 
