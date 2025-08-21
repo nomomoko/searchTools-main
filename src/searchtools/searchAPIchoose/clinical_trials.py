@@ -65,6 +65,111 @@ class ClinicalTrialsAPIWrapper:
         from ..proxy_manager import get_anti_block_client
         self.anti_block_client = get_anti_block_client(use_proxy=False)  # 可通过环境变量启用代理
 
+    def _search_rss_feed(self, search_query: str, max_studies: int = 15) -> list:
+        """
+        使用ClinicalTrials.gov的RSS feed进行搜索，通常不会被403阻止
+        """
+        try:
+            logger.info(f"[ClinicalTrials RSS] Searching for: {search_query}")
+
+            # 构建RSS搜索URL
+            import urllib.parse
+            encoded_query = urllib.parse.quote_plus(search_query)
+
+            # ClinicalTrials.gov RSS feed URL
+            rss_url = f"https://clinicaltrials.gov/ct2/results/rss.xml?term={encoded_query}&count={min(max_studies, 20)}"
+
+            # 使用简单的请求头
+            rss_headers = {
+                "User-Agent": "Mozilla/5.0 (compatible; Academic Research Bot)",
+                "Accept": "application/rss+xml, application/xml, text/xml",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+
+            from ..http_client import SearchHTTPClient
+            rss_client = SearchHTTPClient(headers=rss_headers, timeout=30.0, max_retries=1)
+
+            response = rss_client.get(rss_url)
+
+            if response.status_code == 200:
+                # 解析RSS XML
+                studies = self._parse_rss_xml(response.text, search_query)
+                logger.info(f"[ClinicalTrials RSS] Found {len(studies)} studies")
+                return studies
+            else:
+                logger.warning(f"[ClinicalTrials RSS] HTTP {response.status_code}")
+                return []
+
+        except Exception as e:
+            logger.error(f"[ClinicalTrials RSS] Error: {e}")
+            return []
+
+    def _parse_rss_xml(self, xml_content: str, search_query: str) -> list:
+        """
+        解析RSS XML内容
+        """
+        try:
+            import xml.etree.ElementTree as ET
+            import re
+
+            root = ET.fromstring(xml_content)
+            studies = []
+
+            # 查找所有的item元素
+            for item in root.findall('.//item'):
+                try:
+                    title_elem = item.find('title')
+                    link_elem = item.find('link')
+                    description_elem = item.find('description')
+
+                    if title_elem is not None and link_elem is not None:
+                        title = title_elem.text or ""
+                        link = link_elem.text or ""
+                        description = description_elem.text if description_elem is not None else ""
+
+                        # 从链接中提取NCT ID
+                        nct_match = re.search(r'NCT\d{8}', link)
+                        nct_id = nct_match.group(0) if nct_match else "Unknown"
+
+                        # 构建标准格式的study对象
+                        study = {
+                            "protocolSection": {
+                                "identificationModule": {
+                                    "nctId": nct_id,
+                                    "briefTitle": title
+                                },
+                                "statusModule": {
+                                    "overallStatus": "Unknown"
+                                },
+                                "conditionsModule": {
+                                    "conditions": [search_query]
+                                },
+                                "armsInterventionsModule": {
+                                    "interventions": [{"name": "See study details"}]
+                                },
+                                "descriptionModule": {
+                                    "briefSummary": description[:500] + "..." if len(description) > 500 else description
+                                },
+                                "sponsorCollaboratorsModule": {
+                                    "leadSponsor": {"name": "See ClinicalTrials.gov"}
+                                }
+                            }
+                        }
+                        studies.append(study)
+
+                        if len(studies) >= 10:  # 限制数量
+                            break
+
+                except Exception as e:
+                    logger.warning(f"[ClinicalTrials RSS] Failed to parse item: {e}")
+                    continue
+
+            return studies
+
+        except Exception as e:
+            logger.error(f"[ClinicalTrials RSS] XML parsing error: {e}")
+            return []
+
     def _search_web_scraping(self, search_query: str, max_studies: int = 15) -> list:
         """
         使用网页抓取作为最后的后备方案
@@ -200,8 +305,14 @@ class ClinicalTrialsAPIWrapper:
                     logger.warning(f"[ClinicalTrials Alternative] Endpoint failed: {e}")
                     continue
 
-            # 如果所有API都失败，尝试网页抓取
-            logger.info("[ClinicalTrials Alternative] All APIs failed, trying web scraping")
+            # 如果所有API都失败，尝试RSS feed
+            logger.info("[ClinicalTrials Alternative] All APIs failed, trying RSS feed")
+            rss_results = self._search_rss_feed(search_query, max_studies)
+            if rss_results:
+                return rss_results
+
+            # 如果RSS也失败，尝试网页抓取
+            logger.info("[ClinicalTrials Alternative] RSS failed, trying web scraping")
             return self._search_web_scraping(search_query, max_studies)
 
         except Exception as e:
@@ -390,11 +501,90 @@ class ClinicalTrialsAPIWrapper:
         try:
             logger.info("[ClinicalTrials] Trying alternative data sources")
 
-            # 尝试WHO ICTRP
+            # 尝试NIH Reporter作为第一选择
+            try:
+                from .nih_reporter import NIHReporterAPIWrapper
+                nih_wrapper = NIHReporterAPIWrapper()
+                nih_results = nih_wrapper.search_and_parse(search_query, max_studies // 2)
+
+                if nih_results:
+                    logger.info(f"[ClinicalTrials] NIH Reporter found {len(nih_results)} projects")
+                    # 转换为ClinicalTrials.gov格式
+                    converted_results = []
+                    for result in nih_results:
+                        converted = {
+                            "protocolSection": {
+                                "identificationModule": {
+                                    "nctId": result.get("nctId", "N/A"),
+                                    "briefTitle": result.get("briefTitle", "N/A")
+                                },
+                                "statusModule": {
+                                    "overallStatus": result.get("overallStatus", "N/A")
+                                },
+                                "conditionsModule": {
+                                    "conditions": [result.get("conditions", "N/A")]
+                                },
+                                "armsInterventionsModule": {
+                                    "interventions": [{"name": result.get("interventionName", "N/A")}]
+                                },
+                                "descriptionModule": {
+                                    "briefSummary": result.get("briefSummary", "N/A")
+                                },
+                                "sponsorCollaboratorsModule": {
+                                    "leadSponsor": {"name": result.get("leadSponsorName", "N/A")}
+                                }
+                            }
+                        }
+                        converted_results.append(converted)
+                    return converted_results
+
+            except Exception as e:
+                logger.warning(f"[ClinicalTrials] NIH Reporter failed: {e}")
+
+            # 尝试ClinicalTrials.gov的替代API接口
+            try:
+                from .alternative_clinical_sources import ClinicalTrialsGovAlternativeWrapper
+                alt_wrapper = ClinicalTrialsGovAlternativeWrapper()
+                alt_results = alt_wrapper.search_via_json_api(search_query, max_studies // 2)
+
+                if alt_results:
+                    logger.info(f"[ClinicalTrials] Alternative API found {len(alt_results)} trials")
+                    return alt_results
+
+            except Exception as e:
+                logger.warning(f"[ClinicalTrials] Alternative API failed: {e}")
+
+            # 尝试其他国家的临床试验注册中心
+            try:
+                from .alternative_clinical_sources import ClinicalTrialsRegistryWrapper
+                registry_wrapper = ClinicalTrialsRegistryWrapper()
+                registry_results = registry_wrapper.search_multiple_registries(search_query, max_studies // 3)
+
+                if registry_results:
+                    logger.info(f"[ClinicalTrials] International registries found {len(registry_results)} trials")
+                    return registry_results
+
+            except Exception as e:
+                logger.warning(f"[ClinicalTrials] International registries failed: {e}")
+
+            # 尝试ClinicalTrials.gov网页搜索
+            try:
+                from .nih_reporter import ClinicalTrialsGovSearchWrapper
+                web_wrapper = ClinicalTrialsGovSearchWrapper()
+                web_results = web_wrapper.search_via_web_interface(search_query, max_studies // 4)
+
+                if web_results:
+                    logger.info(f"[ClinicalTrials] Web interface found {len(web_results)} trials")
+                    return web_results
+
+            except Exception as e:
+                logger.warning(f"[ClinicalTrials] Web interface failed: {e}")
+
+            # 尝试WHO ICTRP作为后备
             try:
                 from .who_ictrp import WHOICTRPAPIWrapper
                 who_wrapper = WHOICTRPAPIWrapper()
-                who_results = who_wrapper.search_and_parse(search_query, max_studies // 2)
+                who_results = who_wrapper.search_and_parse(search_query, max_studies // 3)
 
                 if who_results:
                     logger.info(f"[ClinicalTrials] WHO ICTRP found {len(who_results)} trials")
