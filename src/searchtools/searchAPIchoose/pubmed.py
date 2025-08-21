@@ -225,9 +225,10 @@ class PubMedAPIWrapper(BaseModel):
                 import time as _time
                 _time.sleep(max(0.5, float(self.rate_limit_delay or 0.5)))
 
-        except Exception as e:
-            logger.error(f"Error fetching PubMed details: {e}")
-            return
+            except Exception as e:
+                logger.error(f"Error fetching PubMed details for batch: {e}")
+                # 继续处理下一批，不中断整个流程
+                continue
 
     def _parse_xml_content(self, xml_content: str) -> List[dict]:
         """
