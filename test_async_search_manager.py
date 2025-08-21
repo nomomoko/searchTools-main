@@ -100,7 +100,10 @@ async def test_async_search_and_deduplication():
         print("   重复结果统计:")
         print(f"     - 总重复数: {duplicate_stats['total']}")
         print(f"     - 按DOI重复: {duplicate_stats['by_doi']}")
-        print(f"     - 按标题重复: {duplicate_stats['by_title']}")
+        print(f"     - 按PMID重复: {duplicate_stats['by_pmid']}")
+        print(f"     - 按NCTID重复: {duplicate_stats['by_nctid']}")
+        print(f"     - 按标题+作者重复: {duplicate_stats['by_title_author']}")
+        print(f"     - 保留数量: {duplicate_stats['kept']}")
 
         # 显示去重后的前几个结果
         if deduplicated_results:
