@@ -59,6 +59,9 @@ PYTHONPATH=src python test_parallel_search.py
 
 # 测试异步搜索管理器
 PYTHONPATH=src python test_async_search_manager.py
+
+# 测试稳定性（包括PubMed和ClinicalTrials）
+PYTHONPATH=src python test_stability.py
 ```
 
 ## 📖 使用方法
@@ -122,18 +125,48 @@ SEMANTIC_SCHOLAR_API_KEY=your_api_key
 # 搜索配置
 SEARCH_TOOLS_MAX_CONCURRENT_REQUESTS=5
 SEARCH_TOOLS_SEMANTIC_SCHOLAR_MAX_RESULTS=10
+
+# 启用/禁用特定数据源
+SEARCH_TOOLS_PUBMED_ENABLED=true
+SEARCH_TOOLS_CLINICAL_TRIALS_ENABLED=true
+
+# 调整超时和重试设置
+SEARCH_TOOLS_PUBMED_TIMEOUT=35.0
+SEARCH_TOOLS_CLINICAL_TRIALS_TIMEOUT=25.0
 ```
+
+## 🔧 稳定性优化
+
+系统针对PubMed和ClinicalTrials进行了特别的稳定性优化：
+
+### PubMed优化
+- **重试机制**: 指数退避重试，最多3次
+- **速率限制**: 请求间隔0.5秒，符合NCBI政策
+- **批处理**: 分批获取文章详情，避免请求过大
+- **降级策略**: 失败时自动切换到Europe PMC
+
+### ClinicalTrials优化
+- **多级降级**: 查询失败时自动简化搜索条件
+- **请求优化**: 限制结果数量，添加缓存控制
+- **错误恢复**: 智能重试和错误分类处理
+
+### 使用建议
+- 首次使用时运行稳定性测试: `python test_stability.py`
+- 如遇到频繁错误，可通过环境变量禁用不稳定的源
+- 建议在生产环境中监控各数据源的成功率
 
 ## 📊 支持的数据源
 
-| 数据源 | 描述 | 状态 |
-|--------|------|------|
-| Europe PMC | 欧洲生物医学文献数据库 | ✅ 启用 |
-| Semantic Scholar | AI 驱动的学术搜索引擎 | ✅ 启用 |
-| BioRxiv | 生物学预印本服务器 | ✅ 启用 |
-| MedRxiv | 医学预印本服务器 | ✅ 启用 |
-| PubMed | 美国国立医学图书馆数据库 | ⚠️ 可选 |
-| Clinical Trials | 临床试验数据库 | ⚠️ 可选 |
+| 数据源 | 描述 | 状态 | 稳定性 |
+|--------|------|------|--------|
+| Europe PMC | 欧洲生物医学文献数据库 | ✅ 启用 | 🟢 高 |
+| Semantic Scholar | AI 驱动的学术搜索引擎 | ✅ 启用 | 🟢 高 |
+| BioRxiv | 生物学预印本服务器 | ✅ 启用 | 🟢 高 |
+| MedRxiv | 医学预印本服务器 | ✅ 启用 | 🟢 高 |
+| PubMed | 美国国立医学图书馆数据库 | ✅ 启用 | 🟡 中等* |
+| Clinical Trials | 临床试验数据库 | ✅ 启用 | 🟡 中等* |
+
+*注：PubMed和Clinical Trials已进行稳定性优化，包括重试机制、速率限制和降级策略。
 
 ## 🤝 贡献
 

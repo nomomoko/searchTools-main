@@ -27,7 +27,7 @@ class PubMedAPIWrapper(BaseModel):
     top_k_results: int = 5
     MAX_QUERY_LENGTH: int = 300
     doc_content_chars_max: int = 2000
-    email: str = "your.email@example.com"
+    email: str = "searchtools@example.com"  # 更专业的邮箱地址
 
     # Non-serialized fields (excluded from model)
     http_client: Optional[SearchHTTPClient] = Field(default=None, exclude=True)
@@ -120,13 +120,15 @@ class PubMedAPIWrapper(BaseModel):
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_fixed(1),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
     def _search_pubmed(self, query: str) -> List[str]:
         """
         Search PubMed and return a list of article IDs.
+        增强了错误处理和速率限制。
         """
+        # 添加工具标识符以符合NCBI政策
         params = {
             "db": "pubmed",
             "term": query,
@@ -134,61 +136,94 @@ class PubMedAPIWrapper(BaseModel):
             "retmax": self.top_k_results,
             "usehistory": "y",
             "email": self.email,
+            "tool": "searchtools",  # 添加工具标识符
+            "api_key": "",  # 预留API密钥字段
         }
 
         try:
+            logger.info(f"[PubMed] Searching for: {query[:100]}...")
             response = self.http_client.get(self.base_url_esearch,
                                             params=params)
+
+            # 检查响应状态
+            if response.status_code == 429:
+                logger.warning("[PubMed] Rate limit exceeded, waiting longer...")
+                import time as _time
+                _time.sleep(2.0)  # 更长的等待时间
+                raise Exception("Rate limit exceeded")
+
             data = response.json()
+
+            # 检查API错误
+            if "esearchresult" not in data:
+                logger.error(f"[PubMed] Unexpected response format: {data}")
+                return []
 
             # Extract IDs from the response
             id_list = data.get("esearchresult", {}).get("idlist", [])
+            logger.info(f"[PubMed] Found {len(id_list)} article IDs")
+
             # NCBI 友好：轻微等待，降低 429/403 风险
             import time as _time
-            _time.sleep(max(0.0, float(self.rate_limit_delay or 0.3)))
+            _time.sleep(max(0.5, float(self.rate_limit_delay or 0.5)))
             return id_list
 
         except Exception as e:
             logger.error(f"Error searching PubMed: {e}")
-            return []
+            # 不立即返回空列表，让重试机制处理
+            raise
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_fixed(1),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
         reraise=True,
     )
     def _fetch_details(self, article_ids: List[str]) -> Iterator[dict]:
         """
         Fetch details for a list of PubMed IDs.
+        增强了错误处理和批处理逻辑。
         """
         if not article_ids:
             return
 
-        # Convert IDs to comma-separated string
-        id_str = ",".join(article_ids)
+        # 分批处理以避免请求过大
+        batch_size = min(10, len(article_ids))  # 限制批次大小
+        for i in range(0, len(article_ids), batch_size):
+            batch_ids = article_ids[i:i + batch_size]
+            id_str = ",".join(batch_ids)
 
-        params = {
-            "db": "pubmed",
-            "id": id_str,
-            "retmode": "xml",
-            "email": self.email
-        }
+            params = {
+                "db": "pubmed",
+                "id": id_str,
+                "retmode": "xml",
+                "email": self.email,
+                "tool": "searchtools",  # 添加工具标识符
+            }
 
-        try:
-            response = self.http_client.get(self.base_url_efetch,
-                                            params=params)
-            xml_content = response.text
+            try:
+                logger.info(f"[PubMed] Fetching details for {len(batch_ids)} articles")
+                response = self.http_client.get(self.base_url_efetch,
+                                                params=params)
 
-            # Parse XML content
-            # Note: In production, you'd want to use a proper XML parser
-            # For now, we'll do basic parsing
-            articles = self._parse_xml_content(xml_content)
+                # 检查响应状态
+                if response.status_code == 429:
+                    logger.warning("[PubMed] Rate limit exceeded during fetch")
+                    import time as _time
+                    _time.sleep(3.0)  # 更长的等待时间
+                    raise Exception("Rate limit exceeded during fetch")
 
-            for article in articles:
-                yield article
-            # NCBI 友好：请求后短暂停顿
-            import time as _time
-            _time.sleep(max(0.0, float(self.rate_limit_delay or 0.3)))
+                xml_content = response.text
+
+                # Parse XML content
+                articles = self._parse_xml_content(xml_content)
+
+                for article in articles:
+                    if article:  # 确保文章数据有效
+                        yield article
+
+                # NCBI 友好：请求后短暂停顿
+                import time as _time
+                _time.sleep(max(0.5, float(self.rate_limit_delay or 0.5)))
 
         except Exception as e:
             logger.error(f"Error fetching PubMed details: {e}")

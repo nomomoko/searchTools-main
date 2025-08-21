@@ -210,7 +210,7 @@ def clinical_trials_search(query: str,
                            status: str = None,
                            max_studies: int = 15) -> str:
     """
-    Search ClinicalTrials.gov.
+    Search ClinicalTrials.gov with enhanced stability.
     Useful for finding clinical trials, interventions, and study eligibility.
 
     Args:
@@ -221,34 +221,36 @@ def clinical_trials_search(query: str,
     Returns:
         Formatted search results from ClinicalTrials.gov
     """
-    wrapper = ClinicalTrialsAPIWrapper()
+    import logging
+    logger = logging.getLogger(__name__)
 
-    # Use configured max_results if max_studies not specified
-    if max_studies == 15:  # default value
-        max_studies = wrapper.max_results if hasattr(wrapper,
-                                                     "max_results") else 15
-
-    # Search and parse results with a light retry + degrade strategy
-    results = []
     try:
+        wrapper = ClinicalTrialsAPIWrapper()
+
+        # Use configured max_results if max_studies not specified
+        if max_studies == 15:  # default value
+            max_studies = wrapper.max_results if hasattr(wrapper,
+                                                         "max_results") else 10
+
+        # 限制最大搜索数量以提高稳定性
+        max_studies = min(max_studies, 20)
+
+        logger.info(f"[ClinicalTrials Tool] Searching for: {query}")
+
+        # 使用改进的search_and_parse方法（已包含降级策略）
         results = wrapper.search_and_parse(query,
                                            status=status,
                                            max_studies=max_studies)
-    except Exception:
-        results = []
 
-    # Fallback 1: reduce page size and drop status filter on empty/error
-    if not results:
-        try:
-            smaller = max(5, min(10, max_studies))
-            results = wrapper.search_and_parse(query,
-                                               status=None,
-                                               max_studies=smaller)
-        except Exception:
-            results = []
+        if not results:
+            logger.warning("[ClinicalTrials Tool] No results found")
+            return "No relevant clinical trials found for the given query."
 
-    if not results:
-        return "No relevant clinical trials found."
+        logger.info(f"[ClinicalTrials Tool] Found {len(results)} trials")
+
+    except Exception as e:
+        logger.error(f"[ClinicalTrials Tool] Search failed: {e}")
+        return f"Clinical trials search temporarily unavailable. Error: {str(e)[:100]}"
 
     # 转换为统一格式（临床试验格式略有不同）
     formatted_papers = []
@@ -355,8 +357,8 @@ def semantic_scholar_search(
 @tool
 def pubmed_search(query: str) -> str:
     """
-    Search PubMed directly via NCBI E-utilities.
-    Note: This is slower than Europe PMC and is disabled by default.
+    Search PubMed directly via NCBI E-utilities with enhanced stability.
+    Includes fallback to Europe PMC for better reliability.
 
     Args:
         query: Search query string
@@ -364,26 +366,39 @@ def pubmed_search(query: str) -> str:
     Returns:
         Formatted search results from PubMed
     """
-    # Primary: direct PubMed
-    wrapper = PubMedAPIWrapper()
+    import logging
+    logger = logging.getLogger(__name__)
+
     papers: list = []
+
+    # Primary: direct PubMed with enhanced error handling
     try:
+        logger.info(f"[PubMed Tool] Searching PubMed for: {query}")
+        wrapper = PubMedAPIWrapper()
         papers = wrapper.run(query)
-    except Exception:
-        papers = []
+
+        if papers:
+            logger.info(f"[PubMed Tool] Found {len(papers)} papers from PubMed")
+            return format_paper_results(papers)
+
+    except Exception as e:
+        logger.warning(f"[PubMed Tool] Direct PubMed search failed: {e}")
 
     # Fallback: Europe PMC (mirror; generally faster and more stable)
-    if not papers:
-        try:
-            epmc = EuropePMCAPIWrapper()
-            papers = epmc.run(query)
-        except Exception:
-            papers = []
+    try:
+        logger.info("[PubMed Tool] Trying Europe PMC fallback")
+        epmc = EuropePMCAPIWrapper()
+        papers = epmc.run(query)
 
-    if not papers:
-        return "No papers found matching the query."
+        if papers:
+            logger.info(f"[PubMed Tool] Found {len(papers)} papers from Europe PMC")
+            return format_paper_results(papers)
 
-    return format_paper_results(papers)
+    except Exception as e:
+        logger.error(f"[PubMed Tool] Europe PMC fallback failed: {e}")
+
+    logger.warning("[PubMed Tool] All search methods failed")
+    return "PubMed search temporarily unavailable. Please try again later or use Europe PMC search."
 
 
 # Export all tools for easy import

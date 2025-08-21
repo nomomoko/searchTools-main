@@ -1,6 +1,10 @@
 from ..http_client import SearchHTTPClient
+import time
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 API_BASE_URL = "https://clinicaltrials.gov/api/v2/"
+logger = logging.getLogger(__name__)
 
 
 class ClinicalTrialsAPIWrapper:
@@ -24,6 +28,8 @@ class ClinicalTrialsAPIWrapper:
 
         config = get_api_config("clinical_trials")
         self.max_results = config.max_results  # 保存配置的最大结果数
+        self.rate_limit_delay = getattr(config, 'rate_limit_delay', 0.5)
+
         # ClinicalTrials.gov API 更稳定的 JSON 请求头
         headers = {
             "User-Agent":
@@ -32,18 +38,28 @@ class ClinicalTrialsAPIWrapper:
             "Accept-Language": "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
+            "Cache-Control": "no-cache",  # 避免缓存问题
         }
         self.http_client = SearchHTTPClient(headers=headers,
                                             timeout=config.timeout,
                                             max_retries=config.max_retries)
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )
     def search(self,
                search_query: str,
                status: str = None,
                max_studies: int = 15) -> list:
         """
         检索临床试验，返回结构化的试验信息列表。
+        增强了错误处理和重试机制。
         """
+        # 限制最大结果数量以提高稳定性
+        max_studies = min(max_studies, 20)
+
         fields_to_get = [
             "NCTId",
             "BriefTitle",
@@ -54,20 +70,37 @@ class ClinicalTrialsAPIWrapper:
             "BriefSummary",  # 摘要
             "LeadSponsorName",
         ]
+
+        # 构建查询参数，简化查询以提高成功率
+        query_term = search_query.strip()
+        if status:
+            query_term = f"{query_term} AND {status}"
+
         params = {
-            "query.term":
-            f"{search_query} {status}" if status else search_query,
+            "query.term": query_term,
             "fields": ",".join(fields_to_get),
             "pageSize": max_studies,
+            "format": "json",  # 明确指定格式
         }
+
         try:
+            logger.info(f"[ClinicalTrials] Searching for: {query_term}")
             response = self.http_client.get(f"{self.base_url}studies",
                                             params=params)
+
+            # 添加速率限制延迟
+            if self.rate_limit_delay > 0:
+                time.sleep(self.rate_limit_delay)
+
             data = response.json()
-            return data.get("studies", [])
+            studies = data.get("studies", [])
+            logger.info(f"[ClinicalTrials] Found {len(studies)} studies")
+            return studies
+
         except Exception as e:
-            print(f"[ClinicalTrialsAPIWrapper] Error: {e}")
-            return []
+            logger.error(f"[ClinicalTrialsAPIWrapper] Error: {e}")
+            # 不立即返回空列表，让重试机制处理
+            raise
 
     def parse_study(self, study: dict) -> dict:
         """
@@ -123,6 +156,34 @@ class ClinicalTrialsAPIWrapper:
                          max_studies: int = 15) -> list:
         """
         检索并返回结构化的试验信息列表（每条为dict）。
+        增强了错误处理和降级策略。
         """
-        studies = self.search(search_query, status, max_studies)
-        return [self.parse_study(study) for study in studies]
+        try:
+            # 首次尝试完整搜索
+            studies = self.search(search_query, status, max_studies)
+            if studies:
+                return [self.parse_study(study) for study in studies if study]
+
+        except Exception as e:
+            logger.warning(f"[ClinicalTrials] Primary search failed: {e}")
+
+        # 降级策略1: 简化查询，去掉状态过滤
+        if status:
+            try:
+                logger.info("[ClinicalTrials] Trying fallback without status filter")
+                studies = self.search(search_query, None, min(max_studies, 10))
+                if studies:
+                    return [self.parse_study(study) for study in studies if study]
+            except Exception as e:
+                logger.warning(f"[ClinicalTrials] Fallback 1 failed: {e}")
+
+        # 降级策略2: 进一步减少结果数量
+        try:
+            logger.info("[ClinicalTrials] Trying minimal search")
+            studies = self.search(search_query, None, 5)
+            if studies:
+                return [self.parse_study(study) for study in studies if study]
+        except Exception as e:
+            logger.error(f"[ClinicalTrials] All fallback strategies failed: {e}")
+
+        return []
