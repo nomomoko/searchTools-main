@@ -3,7 +3,12 @@
 Test script to test parallel search manager with Semantic Scholar
 """
 
-from src.searchtools import ParallelSearchManager
+import sys
+import os
+# 添加 src 路径到搜索路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+from searchtools import ParallelSearchManager
 
 
 def test_parallel_search_with_semantic():

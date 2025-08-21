@@ -1,10 +1,10 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import sys
 import os
 # 添加 src 路径到搜索路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+from dotenv import load_dotenv
+load_dotenv()
 #!/usr/bin/env python3
 """
 SearchTools 主程序

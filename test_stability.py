@@ -20,8 +20,8 @@ import asyncio
 import time
 import logging
 
-# 添加src目录到Python路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+# 添加 src 路径到搜索路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from searchtools.async_parallel_search_manager import AsyncParallelSearchManager
 from searchtools.search_tools_decorator import pubmed_search, clinical_trials_search

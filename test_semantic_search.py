@@ -3,7 +3,12 @@
 Test script to test Semantic Scholar search functionality
 """
 
-from src.searchtools import semantic_scholar_search
+import sys
+import os
+# 添加 src 路径到搜索路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+from searchtools import semantic_scholar_search
 
 
 def test_semantic_scholar_search():

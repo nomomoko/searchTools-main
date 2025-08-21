@@ -9,10 +9,10 @@ import time
 import sys
 import os
 
-# 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 添加 src 路径到搜索路径
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.searchtools.async_parallel_search_manager import AsyncParallelSearchManager
+from searchtools.async_parallel_search_manager import AsyncParallelSearchManager
 
 
 async def test_async_search_and_deduplication():
@@ -66,7 +66,7 @@ async def test_async_search_and_deduplication():
         print("\n🔄 开始去重处理...")
 
         # 转换为 SearchResult 对象列表
-        from src.searchtools.models import SearchResult
+        from searchtools.models import SearchResult
 
         all_results = []
         for source_name, source_result in results.items():
