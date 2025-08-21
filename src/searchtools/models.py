@@ -38,6 +38,17 @@ class SearchResult:
     quality_score: float = 0.0
     final_score: float = 0.0
 
+    # 高级算法评分字段
+    bm25_score: float = 0.0
+    tfidf_score: float = 0.0
+    semantic_score: float = 0.0
+    ml_score: float = 0.0
+
+    # 元数据字段
+    confidence: float = 0.0
+    algorithm_used: str = ""
+    processing_time: float = 0.0
+
     def __post_init__(self):
         """后初始化处理"""
         if not self.published_date and self.year:

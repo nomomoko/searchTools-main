@@ -1,48 +1,61 @@
 """
-智能重排序引擎
-提供多维度的搜索结果重排序功能，提升结果相关性和用户体验
+智能重排序引擎 v2.0
+提供多维度的搜索结果重排序功能，集成最前沿的信息检索和机器学习算法
 """
 
 import re
 import math
 import logging
+import time
 from datetime import datetime, date
-from typing import List, Set, Dict, Optional, Tuple
+from typing import List, Set, Dict, Optional, Tuple, Any
 from dataclasses import dataclass
 
 from .models import SearchResult
+from .advanced_algorithms import AdvancedRerankAlgorithm
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class RerankConfig:
-    """重排序配置"""
-    
-    # 权重配置 (总和应为1.0)
+    """重排序配置 v2.0"""
+
+    # 主要维度权重配置 (总和应为1.0)
     relevance_weight: float = 0.40  # 相关性权重
     authority_weight: float = 0.30  # 权威性权重
     recency_weight: float = 0.20    # 时效性权重
     quality_weight: float = 0.10    # 质量权重
-    
-    # 相关性评分配置
+
+    # 高级算法配置
+    use_advanced_algorithms: bool = True  # 是否使用高级算法
+    algorithm_mode: str = "hybrid"  # hybrid, traditional, ml_only
+
+    # 高级算法权重
+    advanced_algorithm_weights: Dict[str, float] = None
+
+    # 传统相关性评分配置
     title_match_weight: float = 3.0
     abstract_match_weight: float = 1.5
     author_match_weight: float = 0.5
     phrase_match_bonus: float = 5.0
     synonym_match_weight: float = 0.8
-    
+
     # 时效性配置
     recency_decay_days: int = 365  # 时效性衰减天数
     max_recency_bonus: float = 2.0  # 最大时效性奖励
-    
+
     # 质量评分配置
     min_abstract_length: int = 50
     min_title_length: int = 10
-    
+
+    # 性能配置
+    enable_caching: bool = True
+    cache_size: int = 1000
+
     # 数据源权威性映射
     source_authority: Dict[str, float] = None
-    
+
     def __post_init__(self):
         if self.source_authority is None:
             self.source_authority = {
@@ -55,13 +68,38 @@ class RerankConfig:
                 "NIH Reporter": 0.8,
             }
 
+        if self.advanced_algorithm_weights is None:
+            self.advanced_algorithm_weights = {
+                'bm25': 0.35,
+                'tfidf': 0.25,
+                'cosine': 0.20,
+                'semantic': 0.15,
+                'ml_features': 0.05
+            }
+
 
 class RerankEngine:
-    """智能重排序引擎"""
-    
+    """智能重排序引擎 v2.0 - 集成高级算法"""
+
     def __init__(self, config: Optional[RerankConfig] = None):
         self.config = config or RerankConfig()
         self._synonym_dict = self._build_synonym_dict()
+
+        # 初始化高级算法
+        if self.config.use_advanced_algorithms:
+            self.advanced_algorithm = AdvancedRerankAlgorithm()
+            self.advanced_algorithm.algorithm_weights = self.config.advanced_algorithm_weights
+        else:
+            self.advanced_algorithm = None
+
+        # 缓存
+        self._score_cache = {} if self.config.enable_caching else None
+        self._performance_metrics = {
+            'total_queries': 0,
+            'cache_hits': 0,
+            'avg_processing_time': 0.0,
+            'algorithm_usage': {}
+        }
         
     def _build_synonym_dict(self) -> Dict[str, Set[str]]:
         """构建同义词词典"""
@@ -80,31 +118,71 @@ class RerankEngine:
     
     def rerank_results(self, results: List[SearchResult], query: str) -> List[SearchResult]:
         """
-        对搜索结果进行重排序
-        
+        对搜索结果进行重排序 v2.0
+
         Args:
             results: 搜索结果列表
             query: 搜索查询
-            
+
         Returns:
             重排序后的结果列表
         """
         if not results or not query:
             return results
-            
-        logger.info(f"[RerankEngine] Starting rerank for {len(results)} results with query: '{query}'")
-        
+
+        start_time = time.time()
+        self._performance_metrics['total_queries'] += 1
+
+        logger.info(f"[RerankEngine v2.0] Starting rerank for {len(results)} results with query: '{query}'")
+        logger.info(f"[RerankEngine] Algorithm mode: {self.config.algorithm_mode}")
+
+        # 检查缓存
+        cache_key = f"{hash(query)}_{len(results)}"
+        if self._score_cache and cache_key in self._score_cache:
+            self._performance_metrics['cache_hits'] += 1
+            logger.info(f"[RerankEngine] Cache hit for query")
+            return self._score_cache[cache_key]
+
+        # 准备文档数据用于高级算法
+        documents = []
+        for result in results:
+            doc_text = f"{result.title} {result.abstract}"
+            documents.append(doc_text)
+
+        # 预处理文档（如果使用高级算法）
+        if self.advanced_algorithm and documents:
+            self.advanced_algorithm.prepare_documents(documents)
+            avg_doc_length = sum(len(doc.split()) for doc in documents) / len(documents)
+        else:
+            avg_doc_length = 0
+
         # 计算各维度评分
         scored_results = []
         query_keywords = self._extract_keywords(query)
-        
-        for result in results:
-            # 计算各维度评分
-            relevance_score = self._calculate_relevance_score(result, query, query_keywords)
+
+        for i, result in enumerate(results):
+            # 基础评分
             authority_score = self._calculate_authority_score(result)
             recency_score = self._calculate_recency_score(result)
             quality_score = self._calculate_quality_score(result)
-            
+
+            # 相关性评分（根据算法模式选择）
+            if self.config.algorithm_mode == "traditional":
+                relevance_score = self._calculate_relevance_score(result, query, query_keywords)
+                advanced_scores = {}
+            elif self.config.algorithm_mode == "ml_only" and self.advanced_algorithm:
+                relevance_score = self._calculate_advanced_relevance_score(result, query, documents, avg_doc_length)
+                advanced_scores = getattr(result, '_advanced_scores', {})
+            else:  # hybrid mode
+                traditional_score = self._calculate_relevance_score(result, query, query_keywords)
+                if self.advanced_algorithm:
+                    advanced_score = self._calculate_advanced_relevance_score(result, query, documents, avg_doc_length)
+                    relevance_score = (traditional_score * 0.4 + advanced_score * 0.6)
+                    advanced_scores = getattr(result, '_advanced_scores', {})
+                else:
+                    relevance_score = traditional_score
+                    advanced_scores = {}
+
             # 计算最终评分
             final_score = (
                 relevance_score * self.config.relevance_weight +
@@ -112,26 +190,45 @@ class RerankEngine:
                 recency_score * self.config.recency_weight +
                 quality_score * self.config.quality_weight
             )
-            
+
             # 更新结果对象的评分字段
             result.relevance_score = relevance_score
             result.authority_score = authority_score
             result.recency_score = recency_score
             result.quality_score = quality_score
             result.final_score = final_score
-            
+
+            # 添加高级算法评分
+            if advanced_scores:
+                result.bm25_score = advanced_scores.get('bm25', 0.0)
+                result.tfidf_score = advanced_scores.get('tfidf', 0.0)
+                result.semantic_score = advanced_scores.get('semantic', 0.0)
+                result.ml_score = advanced_scores.get('ml_features', 0.0)
+
             scored_results.append((result, final_score))
-        
+
         # 按最终评分排序
         scored_results.sort(key=lambda x: x[1], reverse=True)
         reranked_results = [result for result, score in scored_results]
-        
+
+        # 更新性能指标
+        processing_time = time.time() - start_time
+        self._update_performance_metrics(processing_time)
+
+        # 缓存结果
+        if self._score_cache:
+            if len(self._score_cache) >= self.config.cache_size:
+                # 简单的LRU：删除最旧的条目
+                oldest_key = next(iter(self._score_cache))
+                del self._score_cache[oldest_key]
+            self._score_cache[cache_key] = reranked_results
+
         # 记录前几个结果的评分
         if scored_results:
             top_scores = [round(score, 3) for _, score in scored_results[:5]]
             logger.info(f"[RerankEngine] Top 5 final scores: {top_scores}")
-        
-        logger.info(f"[RerankEngine] Rerank completed")
+
+        logger.info(f"[RerankEngine] Rerank completed in {processing_time:.3f}s")
         return reranked_results
     
     def _extract_keywords(self, query: str) -> Set[str]:
@@ -145,6 +242,62 @@ class RerankEngine:
         keywords = {word for word in words if len(word) > 2 and word not in stop_words}
         
         return keywords
+
+    def _calculate_advanced_relevance_score(self, result: SearchResult, query: str,
+                                          all_documents: List[str], avg_doc_length: float) -> float:
+        """使用高级算法计算相关性评分"""
+        if not self.advanced_algorithm:
+            return self._calculate_relevance_score(result, query, self._extract_keywords(query))
+
+        document = f"{result.title or ''} {result.abstract or ''}"
+
+        try:
+            # 计算高级算法评分
+            advanced_scores = self.advanced_algorithm.calculate_advanced_score(
+                query, document, all_documents, avg_doc_length
+            )
+
+            # 存储详细评分供后续使用
+            result._advanced_scores = advanced_scores
+
+            # 更新算法使用统计
+            for alg_name in advanced_scores:
+                if alg_name != 'final':
+                    self._performance_metrics['algorithm_usage'][alg_name] = \
+                        self._performance_metrics['algorithm_usage'].get(alg_name, 0) + 1
+
+            # 返回最终评分，标准化到0-10范围
+            final_score = advanced_scores.get('final', 0.0)
+            return min(max(final_score * 10, 0), 10)  # 标准化到0-10
+
+        except Exception as e:
+            logger.warning(f"[RerankEngine] Advanced algorithm failed: {e}, falling back to traditional")
+            return self._calculate_relevance_score(result, query, self._extract_keywords(query))
+
+    def _update_performance_metrics(self, processing_time: float):
+        """更新性能指标"""
+        total_queries = self._performance_metrics['total_queries']
+        current_avg = self._performance_metrics['avg_processing_time']
+
+        # 计算新的平均处理时间
+        new_avg = ((current_avg * (total_queries - 1)) + processing_time) / total_queries
+        self._performance_metrics['avg_processing_time'] = new_avg
+
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """获取性能指标"""
+        metrics = self._performance_metrics.copy()
+        if metrics['total_queries'] > 0:
+            metrics['cache_hit_rate'] = metrics['cache_hits'] / metrics['total_queries']
+        else:
+            metrics['cache_hit_rate'] = 0.0
+
+        return metrics
+
+    def clear_cache(self):
+        """清空缓存"""
+        if self._score_cache:
+            self._score_cache.clear()
+            logger.info("[RerankEngine] Cache cleared")
     
     def _expand_keywords(self, keywords: Set[str]) -> Set[str]:
         """扩展关键词（添加同义词）"""

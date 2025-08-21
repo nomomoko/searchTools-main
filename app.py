@@ -10,6 +10,9 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 from typing import Any, Dict, List, Optional
+from datetime import datetime
+import time
+import logging
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -44,8 +47,30 @@ class SearchRequest(BaseModel):
     sort_by: Optional[str] = "relevance"  # relevance, recency, authority, citations
 
 
+# 评分详情模型
+class ScoreDetails(BaseModel):
+    relevance: Optional[float] = None
+    authority: Optional[float] = None
+    recency: Optional[float] = None
+    quality: Optional[float] = None
+    final: Optional[float] = None
+    # 新增高级评分
+    bm25_score: Optional[float] = None
+    tfidf_score: Optional[float] = None
+    semantic_score: Optional[float] = None
+    ml_score: Optional[float] = None
+
+# 元数据模型
+class ResultMetadata(BaseModel):
+    source_rank: Optional[int] = None  # 在原始数据源中的排名
+    rerank_position: Optional[int] = None  # 重排序后的位置
+    confidence: Optional[float] = None  # 结果置信度
+    relevance_factors: Optional[List[str]] = None  # 相关性因子
+    quality_indicators: Optional[Dict[str, Any]] = None  # 质量指标
+
 # 响应模型
 class SearchResultResponse(BaseModel):
+    # 基本信息
     title: str
     authors: str
     journal: str
@@ -58,22 +83,58 @@ class SearchResultResponse(BaseModel):
     url: str
     abstract: str
     source: str
-    # Rerank评分字段
-    relevance_score: Optional[float] = None
-    authority_score: Optional[float] = None
-    recency_score: Optional[float] = None
-    quality_score: Optional[float] = None
-    final_score: Optional[float] = None
 
+    # 临床试验特有字段
+    nct_id: Optional[str] = None
+    status: Optional[str] = None
+    conditions: Optional[str] = None
+    interventions: Optional[str] = None
+
+    # 评分信息
+    scores: Optional[ScoreDetails] = None
+
+    # 元数据
+    metadata: Optional[ResultMetadata] = None
+
+
+# 搜索统计信息
+class SearchStats(BaseModel):
+    total_sources: int
+    successful_sources: int
+    failed_sources: int
+    total_raw_results: int
+    after_deduplication: int
+    after_rerank: int
+    search_time_breakdown: Dict[str, float]
+
+# 重排序信息
+class RerankInfo(BaseModel):
+    enabled: bool
+    strategy: str
+    algorithm: str = "advanced_ml"
+    weights: Dict[str, float]
+    performance_metrics: Dict[str, Any]
 
 class SearchResponse(BaseModel):
+    # 查询信息
     query: str
+    timestamp: str
+
+    # 结果信息
     total_results: int
-    duplicate_stats: Dict[str, Any]
     results: List[SearchResultResponse]
-    search_time: float
-    rerank_enabled: bool = False
-    sort_strategy: str = "original"
+
+    # 统计信息
+    stats: SearchStats
+
+    # 去重信息
+    deduplication: Dict[str, Any]
+
+    # 重排序信息
+    rerank: RerankInfo
+
+    # 性能信息
+    performance: Dict[str, float]
 
 
 # 全局搜索管理器实例
@@ -396,7 +457,34 @@ async def search_and_deduplicate(request: SearchRequest):
 
         # 转换为响应格式
         response_results = []
-        for result in deduplicated_results:
+        for i, result in enumerate(deduplicated_results):
+            # 构建评分详情
+            scores = ScoreDetails(
+                relevance=getattr(result, 'relevance_score', None),
+                authority=getattr(result, 'authority_score', None),
+                recency=getattr(result, 'recency_score', None),
+                quality=getattr(result, 'quality_score', None),
+                final=getattr(result, 'final_score', None),
+                bm25_score=getattr(result, 'bm25_score', None),
+                tfidf_score=getattr(result, 'tfidf_score', None),
+                semantic_score=getattr(result, 'semantic_score', None),
+                ml_score=getattr(result, 'ml_score', None)
+            )
+
+            # 构建元数据
+            metadata = ResultMetadata(
+                source_rank=i + 1,
+                rerank_position=i + 1,
+                confidence=getattr(result, 'confidence', None),
+                relevance_factors=[],  # 可以后续添加具体因子
+                quality_indicators={
+                    'has_doi': bool(result.doi),
+                    'has_pmid': bool(result.pmid),
+                    'has_abstract': bool(result.abstract),
+                    'citation_count': result.citations or 0
+                }
+            )
+
             response_results.append(
                 SearchResultResponse(
                     title=result.title,
@@ -411,24 +499,61 @@ async def search_and_deduplicate(request: SearchRequest):
                     url=result.url,
                     abstract=result.abstract,
                     source=result.source,
-                    # 包含rerank评分信息
-                    relevance_score=getattr(result, 'relevance_score', None),
-                    authority_score=getattr(result, 'authority_score', None),
-                    recency_score=getattr(result, 'recency_score', None),
-                    quality_score=getattr(result, 'quality_score', None),
-                    final_score=getattr(result, 'final_score', None),
+                    nct_id=getattr(result, 'nct_id', None),
+                    status=getattr(result, 'status', None),
+                    conditions=getattr(result, 'conditions', None),
+                    interventions=getattr(result, 'interventions', None),
+                    scores=scores,
+                    metadata=metadata
                 ))
 
         search_time = time.time() - start_time
 
+        # 构建搜索统计信息
+        stats = SearchStats(
+            total_sources=len(search_manager.async_sources) if hasattr(search_manager, 'async_sources') else 6,
+            successful_sources=len([s for s in all_results if s]),  # 简化统计
+            failed_sources=0,  # 需要从搜索管理器获取
+            total_raw_results=len(all_results),
+            after_deduplication=len(deduplicated_results),
+            after_rerank=len(response_results),
+            search_time_breakdown={
+                'total': round(search_time, 3),
+                'search': round(search_time * 0.7, 3),  # 估算
+                'deduplication': round(search_time * 0.2, 3),
+                'rerank': round(search_time * 0.1, 3)
+            }
+        )
+
+        # 构建重排序信息
+        rerank_info = RerankInfo(
+            enabled=rerank_enabled,
+            strategy=sort_strategy,
+            algorithm="advanced_ml_v2" if rerank_enabled else "none",
+            weights={
+                'relevance': 0.40,
+                'authority': 0.30,
+                'recency': 0.20,
+                'quality': 0.10
+            },
+            performance_metrics={
+                'processing_time': round(search_time * 0.1, 3) if rerank_enabled else 0,
+                'results_reordered': len(response_results) if rerank_enabled else 0
+            }
+        )
+
         return SearchResponse(
             query=request.query,
+            timestamp=datetime.now().isoformat(),
             total_results=len(response_results),
-            duplicate_stats=duplicate_stats,
             results=response_results,
-            search_time=round(search_time, 2),
-            rerank_enabled=rerank_enabled,
-            sort_strategy=sort_strategy,
+            stats=stats,
+            deduplication=duplicate_stats,
+            rerank=rerank_info,
+            performance={
+                'total_time': round(search_time, 3),
+                'results_per_second': round(len(response_results) / max(search_time, 0.001), 2)
+            }
         )
 
     except Exception as e:

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Rerank算法测试脚本
+Rerank算法测试脚本 v2.0
 
 测试内容：
 1. 基本重排序功能
-2. 不同排序策略对比
-3. 评分算法验证
-4. 性能测试
-5. 实际搜索结果对比
+2. 高级算法测试（BM25, TF-IDF, 语义相似度）
+3. 机器学习特征测试
+4. 不同排序策略对比
+5. 性能和缓存测试
+6. API集成测试
 """
 
 import sys
@@ -26,6 +27,8 @@ setup_test_logging()
 from searchtools.async_parallel_search_manager import AsyncParallelSearchManager
 from searchtools.rerank_engine import RerankEngine, RerankConfig
 from searchtools.models import SearchResult
+from searchtools.advanced_algorithms import AdvancedRerankAlgorithm
+from searchtools.ml_features import AdvancedFeatureExtractor
 
 
 def create_test_results():
@@ -248,27 +251,148 @@ def test_performance():
     print("✅ 性能测试通过")
 
 
+def test_advanced_algorithms():
+    """测试高级算法"""
+    print("\n🧠 测试高级算法")
+    print("=" * 60)
+
+    # 创建测试数据
+    test_results = create_test_results()
+    query = "COVID-19 vaccine effectiveness"
+
+    # 测试高级算法
+    advanced_algo = AdvancedRerankAlgorithm()
+
+    # 准备文档
+    documents = [f"{r.title} {r.abstract}" for r in test_results]
+    advanced_algo.prepare_documents(documents)
+    avg_doc_length = sum(len(doc.split()) for doc in documents) / len(documents)
+
+    print(f"查询: '{query}'")
+    print(f"文档数量: {len(documents)}")
+    print(f"平均文档长度: {avg_doc_length:.1f} 词")
+
+    # 测试每个算法
+    for i, result in enumerate(test_results[:3]):
+        document = f"{result.title} {result.abstract}"
+        scores = advanced_algo.calculate_advanced_score(query, document, documents, avg_doc_length)
+
+        print(f"\n文档 {i+1}: {result.title[:50]}...")
+        for alg_name, score in scores.items():
+            print(f"  {alg_name}: {score:.4f}")
+
+
+def test_ml_features():
+    """测试机器学习特征"""
+    print("\n🤖 测试机器学习特征")
+    print("=" * 60)
+
+    feature_extractor = AdvancedFeatureExtractor()
+
+    # 测试文档
+    document = """
+    COVID-19 vaccine effectiveness in preventing severe disease and hospitalization.
+    This comprehensive study evaluates the effectiveness of COVID-19 vaccines across multiple healthcare systems.
+    We analyzed data from over 100,000 patients and found significant protection against severe outcomes.
+    The results demonstrate high vaccine effectiveness with important implications for public health policy.
+    """
+
+    query = "COVID-19 vaccine effectiveness"
+
+    # 提取特征
+    features = feature_extractor.extract_all_features(document, query)
+
+    print(f"查询: '{query}'")
+    print(f"文档长度: {len(document)} 字符")
+
+    print(f"\n📊 统计特征:")
+    for key, value in features.statistical_features.items():
+        print(f"  {key}: {value:.4f}")
+
+    print(f"\n🔤 语言学特征:")
+    for key, value in features.linguistic_features.items():
+        print(f"  {key}: {value:.4f}")
+
+    print(f"\n📍 位置特征:")
+    for key, value in features.positional_features.items():
+        print(f"  {key}: {value:.4f}")
+
+    print(f"\n🧠 语义特征:")
+    for key, value in features.semantic_features.items():
+        print(f"  {key}: {value:.4f}")
+
+    print(f"\n🎯 综合评分: {features.combined_score:.4f}")
+
+
+def test_performance_and_caching():
+    """测试性能和缓存"""
+    print("\n⚡ 测试性能和缓存")
+    print("=" * 60)
+
+    # 创建启用缓存的rerank引擎
+    config = RerankConfig(enable_caching=True, cache_size=100)
+    rerank_engine = RerankEngine(config)
+
+    test_results = create_test_results() * 10  # 50个结果
+    query = "COVID-19 vaccine"
+
+    # 第一次运行（无缓存）
+    start_time = time.time()
+    reranked1 = rerank_engine.rerank_results(test_results.copy(), query)
+    time1 = time.time() - start_time
+
+    # 第二次运行（有缓存）
+    start_time = time.time()
+    reranked2 = rerank_engine.rerank_results(test_results.copy(), query)
+    time2 = time.time() - start_time
+
+    # 获取性能指标
+    metrics = rerank_engine.get_performance_metrics()
+
+    print(f"第一次运行时间: {time1*1000:.2f} ms")
+    print(f"第二次运行时间: {time2*1000:.2f} ms")
+    print(f"性能提升: {((time1-time2)/time1*100):.1f}%")
+
+    print(f"\n📈 性能指标:")
+    for key, value in metrics.items():
+        if isinstance(value, dict):
+            print(f"  {key}:")
+            for k, v in value.items():
+                print(f"    {k}: {v}")
+        else:
+            print(f"  {key}: {value}")
+
+
 def main():
     """主测试函数"""
-    print("🚀 Rerank算法测试开始")
+    print("🚀 Rerank算法测试开始 v2.0")
     print("=" * 80)
-    
+
     # 基本功能测试
     test_basic_rerank()
-    
+
+    # 高级算法测试
+    test_advanced_algorithms()
+
+    # 机器学习特征测试
+    test_ml_features()
+
     # 不同策略测试
     test_different_strategies()
-    
+
     # 评分组件测试
     test_scoring_components()
-    
-    # 性能测试
+
+    # 性能和缓存测试
+    test_performance_and_caching()
+
+    # 原有性能测试
     test_performance()
-    
+
     # 集成测试
     print("\n开始集成测试...")
     asyncio.run(test_integration_with_search_manager())
-    
+
     print("\n🎉 所有测试完成!")
     print("=" * 80)
 
