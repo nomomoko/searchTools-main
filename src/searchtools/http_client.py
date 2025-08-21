@@ -4,6 +4,7 @@ Provides both sync and async interfaces with consistent configuration.
 """
 
 import httpx
+import os
 from typing import Optional, Dict, Any
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
