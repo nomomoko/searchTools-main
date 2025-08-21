@@ -113,9 +113,11 @@ class AsyncSearchHTTPClient:
                                               **kwargs)
             # 4xx 错误不重试
             if 400 <= response.status_code < 500:
-                logger.error(
-                    f"Client error {response.status_code} for URL: {url}"
-                )
+                # 对于403错误，使用INFO级别，因为我们有后备策略
+                if response.status_code == 403:
+                    logger.info(f"HTTP 403 (expected, will use fallback): {url}")
+                else:
+                    logger.error(f"Client error {response.status_code} for URL: {url}")
                 response.raise_for_status()
             response.raise_for_status()
             return response
@@ -163,9 +165,11 @@ class AsyncSearchHTTPClient:
                                                **kwargs)
             # 4xx 错误不重试
             if 400 <= response.status_code < 500:
-                logger.error(
-                    f"Client error {response.status_code} for URL: {url}"
-                )
+                # 对于403错误，使用INFO级别，因为我们有后备策略
+                if response.status_code == 403:
+                    logger.info(f"HTTP 403 (expected, will use fallback): {url}")
+                else:
+                    logger.error(f"Client error {response.status_code} for URL: {url}")
                 response.raise_for_status()
             response.raise_for_status()
             return response

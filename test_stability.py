@@ -23,14 +23,12 @@ import logging
 # 添加 src 路径到搜索路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
+# 设置清洁的日志配置
+from searchtools.log_config import setup_test_logging
+setup_test_logging()
+
 from searchtools.async_parallel_search_manager import AsyncParallelSearchManager
 from searchtools.search_tools_decorator import pubmed_search, clinical_trials_search
-
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 

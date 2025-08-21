@@ -17,6 +17,10 @@ import os
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
+# 设置清洁的日志配置
+from searchtools.log_config import setup_test_logging
+setup_test_logging()
+
 from searchtools.async_parallel_search_manager import AsyncParallelSearchManager
 # from searchtools.parallel_search_manager import ParallelSearchManager  # 暂时注释掉，避免导入错误
 

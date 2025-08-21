@@ -101,7 +101,11 @@ class ClinicalTrialsAPIWrapper:
                 return []
 
         except Exception as e:
-            logger.error(f"[ClinicalTrials RSS] Error: {e}")
+            # 检查是否是403错误（预期的）
+            if "403" in str(e):
+                logger.info(f"[ClinicalTrials RSS] 403 error (expected, using fallback)")
+            else:
+                logger.error(f"[ClinicalTrials RSS] Error: {e}")
             return []
 
     def _parse_rss_xml(self, xml_content: str, search_query: str) -> list:
@@ -210,7 +214,11 @@ class ClinicalTrialsAPIWrapper:
                 return []
 
         except Exception as e:
-            logger.error(f"[ClinicalTrials WebScraping] Error: {e}")
+            # 检查是否是403错误（预期的）
+            if "403" in str(e):
+                logger.info(f"[ClinicalTrials WebScraping] 403 error (expected, using fallback)")
+            else:
+                logger.error(f"[ClinicalTrials WebScraping] Error: {e}")
             return []
 
     def _parse_html_results(self, html_content: str, search_query: str) -> list:
@@ -302,7 +310,11 @@ class ClinicalTrialsAPIWrapper:
                             return studies
 
                 except Exception as e:
-                    logger.warning(f"[ClinicalTrials Alternative] Endpoint failed: {e}")
+                    # 检查是否是403错误（预期的）
+                    if "403" in str(e):
+                        logger.info(f"[ClinicalTrials Alternative] Endpoint returned 403 (expected)")
+                    else:
+                        logger.warning(f"[ClinicalTrials Alternative] Endpoint failed: {e}")
                     continue
 
             # 如果所有API都失败，尝试RSS feed
@@ -368,7 +380,10 @@ class ClinicalTrialsAPIWrapper:
                         time.sleep(self.rate_limit_delay)
                         return studies
                 else:
-                    logger.warning(f"[ClinicalTrials] Anti-block client returned {response.status_code}")
+                    if response.status_code == 403:
+                        logger.info(f"[ClinicalTrials] Anti-block client returned 403 (expected, using fallback)")
+                    else:
+                        logger.warning(f"[ClinicalTrials] Anti-block client returned {response.status_code}")
 
             except Exception as e:
                 logger.warning(f"[ClinicalTrials] Anti-block client failed: {e}")
@@ -388,7 +403,11 @@ class ClinicalTrialsAPIWrapper:
             logger.warning(f"[ClinicalTrials] Original client returned {response.status_code}, trying alternative")
 
         except Exception as e:
-            logger.warning(f"[ClinicalTrials] All direct API attempts failed: {e}")
+            # 检查是否是403错误（预期的）
+            if "403" in str(e):
+                logger.info(f"[ClinicalTrials] Direct API returned 403 (expected, using fallback)")
+            else:
+                logger.warning(f"[ClinicalTrials] All direct API attempts failed: {e}")
 
         # 降级到替代API
         return self._search_alternative_api(search_query, max_studies)

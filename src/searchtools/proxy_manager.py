@@ -189,7 +189,7 @@ class AntiBlockHTTPClient:
             if response.status_code == 200:
                 return response
             elif response.status_code == 403:
-                logger.warning(f"[AntiBlockHTTPClient] 403 error for URL: {url}")
+                logger.info(f"[AntiBlockHTTPClient] 403 (expected, will use fallback): {url}")
                 # 如果使用代理且遇到403，标记当前代理为失败
                 if self.use_proxy and self.proxy_manager and 'proxies' in kwargs:
                     current_proxy = list(kwargs['proxies'].values())[0]
