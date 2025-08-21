@@ -129,6 +129,8 @@ class CosineSimilarity:
     
     def build_vocabulary(self, documents: List[str]):
         """构建词汇表"""
+        if not hasattr(self, 'vocabulary') or not isinstance(self.vocabulary, set):
+            self.vocabulary = set()
         for doc in documents:
             words = re.findall(r'\b\w+\b', doc.lower())
             self.vocabulary.update(words)

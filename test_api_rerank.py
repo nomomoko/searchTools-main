@@ -80,9 +80,9 @@ def test_search_with_rerank():
                 
                 print(f"  ✅ 状态: 成功")
                 print(f"  📈 结果数量: {data['total_results']}")
-                print(f"  🔄 Rerank启用: {data.get('rerank_enabled', False)}")
-                print(f"  📋 排序策略: {data.get('sort_strategy', 'unknown')}")
-                print(f"  ⏱️ 搜索时间: {data['search_time']}秒")
+                print(f"  🔄 Rerank启用: {data.get('rerank', {}).get('enabled', False)}")
+                print(f"  📋 排序策略: {data.get('rerank', {}).get('strategy', 'unknown')}")
+                print(f"  ⏱️ 搜索时间: {data.get('performance', {}).get('total_time', 0)}秒")
                 
                 # 显示前3个结果
                 if data['results']:
@@ -93,12 +93,13 @@ def test_search_with_rerank():
                         print(f"       来源: {result['source']}, 引用: {result.get('citations', 0)}")
                         
                         # 显示rerank评分（如果有）
-                        if result.get('final_score') is not None:
-                            print(f"       最终评分: {result['final_score']:.3f}")
-                            print(f"       (相关性: {result.get('relevance_score', 0):.2f}, "
-                                  f"权威性: {result.get('authority_score', 0):.2f}, "
-                                  f"时效性: {result.get('recency_score', 0):.2f}, "
-                                  f"质量: {result.get('quality_score', 0):.2f})")
+                        scores = result.get('scores', {})
+                        if scores and scores.get('final') is not None:
+                            print(f"       最终评分: {scores['final']:.3f}")
+                            print(f"       (相关性: {scores.get('relevance', 0):.2f}, "
+                                  f"权威性: {scores.get('authority', 0):.2f}, "
+                                  f"时效性: {scores.get('recency', 0):.2f}, "
+                                  f"质量: {scores.get('quality', 0):.2f})")
                 
             else:
                 print(f"  ❌ 状态: 失败 ({response.status_code})")
@@ -138,8 +139,8 @@ def test_search_comparison():
         data_with_rerank = response_with_rerank.json()
         
         print(f"\n对比结果:")
-        print(f"  无Rerank - 结果数: {data_no_rerank['total_results']}, 时间: {data_no_rerank['search_time']}s")
-        print(f"  有Rerank - 结果数: {data_with_rerank['total_results']}, 时间: {data_with_rerank['search_time']}s")
+        print(f"  无Rerank - 结果数: {data_no_rerank['total_results']}, 时间: {data_no_rerank.get('performance', {}).get('total_time', 0)}s")
+        print(f"  有Rerank - 结果数: {data_with_rerank['total_results']}, 时间: {data_with_rerank.get('performance', {}).get('total_time', 0)}s")
         
         # 对比前3个结果的顺序
         print(f"\n📊 结果顺序对比:")
@@ -149,7 +150,8 @@ def test_search_comparison():
             
             print(f"  位置 {i+1}:")
             print(f"    无Rerank: {title_no_rerank}")
-            print(f"    有Rerank: {title_with_rerank} (评分: {data_with_rerank['results'][i].get('final_score', 'N/A')})")
+            final_score = data_with_rerank['results'][i].get('scores', {}).get('final', 'N/A')
+            print(f"    有Rerank: {title_with_rerank} (评分: {final_score})")
             
             if title_no_rerank != title_with_rerank:
                 print(f"    🔄 顺序发生变化")
