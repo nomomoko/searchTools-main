@@ -348,7 +348,7 @@ async def search_and_deduplicate(request: SearchRequest):
                     citations=result.citations,
                     doi=result.doi,
                     pmid=result.pmid,
-                    pmcid=result.pmid,
+                    pmcid=result.pmcid,
                     published_date=result.published_date,
                     url=result.url,
                     abstract=result.abstract,
