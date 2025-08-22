@@ -21,6 +21,7 @@ from .models import SearchResult, SourceSearchResult
 
 # 导入重排序引擎
 from .rerank_engine import RerankEngine, RerankConfig
+from .hybrid_retrieval import HybridRetrievalSystem, HybridConfig
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,8 @@ def _normalize_title(title: str) -> str:
 class AsyncParallelSearchManager:
     """异步版本的多源并行搜索管理器"""
 
-    def __init__(self, enable_rerank: bool = None, rerank_config: RerankConfig = None):
+    def __init__(self, enable_rerank: bool = None, rerank_config: RerankConfig = None,
+                 enable_hybrid: bool = None, hybrid_config: HybridConfig = None):
         from .search_config import get_config
 
         config = get_config()
@@ -110,6 +112,21 @@ class AsyncParallelSearchManager:
             )
 
         self.rerank_engine = RerankEngine(rerank_config) if enable_rerank else None
+
+        # 混合检索配置
+        if enable_hybrid is None:
+            enable_hybrid = getattr(config, 'enable_hybrid_retrieval', False)
+
+        self.enable_hybrid = enable_hybrid
+
+        if enable_hybrid and hybrid_config is None:
+            hybrid_config = HybridConfig(
+                embedding_model=getattr(config, 'embedding_model', 'specter2'),
+                enable_colbert=getattr(config, 'enable_colbert', True),
+                enable_academic_features=getattr(config, 'enable_academic_features', True)
+            )
+
+        self.hybrid_system = HybridRetrievalSystem(hybrid_config) if enable_hybrid else None
 
         # Europe PMC
         api_config = config.get_api_config("europe_pmc")
@@ -437,6 +454,55 @@ class AsyncParallelSearchManager:
 
         return self.rerank_engine.rerank_results(results, query)
 
+    def hybrid_rerank_results(self, results: List[SearchResult], query: str) -> List[SearchResult]:
+        """使用混合检索系统重排序结果"""
+        if not self.hybrid_system or not results:
+            logger.info("[AsyncParallelSearch] Hybrid system not available, falling back to traditional rerank")
+            return self.rerank_results(results, query) if self.rerank_engine else results
+
+        try:
+            # 将SearchResult转换为字典格式
+            documents = []
+            for result in results:
+                doc = {
+                    'title': result.title,
+                    'abstract': result.abstract,
+                    'authors': result.authors,
+                    'journal': result.journal,
+                    'year': result.year,
+                    'citations': result.citations,
+                    'doi': result.doi,
+                    'pmid': result.pmid,
+                    'published_date': result.published_date,
+                    'source': result.source,
+                    'keywords': getattr(result, 'keywords', ''),
+                    'nct_id': getattr(result, 'nct_id', None),
+                    'status': getattr(result, 'status', None),
+                    'conditions': getattr(result, 'conditions', None),
+                    'interventions': getattr(result, 'interventions', None)
+                }
+                documents.append(doc)
+
+            # 执行混合检索重排序
+            reranked_results = self.hybrid_system.retrieve_and_rank(query, documents)
+
+            # 将结果转换回SearchResult格式
+            final_results = []
+            for original_idx, score, doc in reranked_results:
+                result = results[original_idx]
+                # 添加混合检索分数
+                result.final_score = score
+                result.hybrid_score = score
+                final_results.append(result)
+
+            logger.info(f"[AsyncParallelSearch] Hybrid reranking completed: {len(results)} → {len(final_results)} results")
+            return final_results
+
+        except Exception as e:
+            logger.error(f"[AsyncParallelSearch] Error in hybrid reranking: {e}")
+            # 回退到传统重排序
+            return self.rerank_results(results, query) if self.rerank_engine else results
+
     async def search_all_sources_with_deduplication(
         self,
         query: str,
@@ -522,12 +588,19 @@ class AsyncParallelSearchManager:
         logger.info(f"[AsyncCrossSourceDedup] Final results: {total_stats['total_raw_results']} → {len(all_results)} after cross-source deduplication")
 
         # 执行重排序
-        if self.enable_rerank and all_results:
-            logger.info(f"[AsyncParallelSearch] Starting rerank for {len(all_results)} results")
+        if self.enable_hybrid and all_results:
+            logger.info(f"[AsyncParallelSearch] Starting hybrid retrieval for {len(all_results)} results")
+            all_results = self.hybrid_rerank_results(all_results, query)
+            total_stats["hybrid_enabled"] = True
+            total_stats["rerank_enabled"] = True  # 混合检索包含重排序
+        elif self.enable_rerank and all_results:
+            logger.info(f"[AsyncParallelSearch] Starting traditional rerank for {len(all_results)} results")
             all_results = self.rerank_results(all_results, query)
             total_stats["rerank_enabled"] = True
+            total_stats["hybrid_enabled"] = False
         else:
             total_stats["rerank_enabled"] = False
+            total_stats["hybrid_enabled"] = False
 
         return all_results, total_stats
 
