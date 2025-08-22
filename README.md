@@ -128,6 +128,25 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
 - **内存使用**: ~10MB（包含缓存）
 - **并发支持**: 支持多用户同时搜索
 
+### 🌐 Web界面使用
+
+#### 访问地址
+```
+http://localhost:8000
+```
+
+#### 功能特点
+- **智能搜索**: 输入关键词即可搜索多个学术数据库
+- **实时统计**: 显示搜索时间、结果数量、去重统计
+- **详细信息**: 每个结果包含标题、作者、期刊、摘要、DOI等
+- **响应式设计**: 支持桌面和移动设备
+
+#### 使用步骤
+1. **启动服务**: `python app.py`
+2. **打开浏览器**: 访问 http://localhost:8000
+3. **输入关键词**: 如"COVID-19 vaccine"、"machine learning"等
+4. **查看结果**: 浏览搜索结果和统计信息
+
 ## 📖 使用方法
 
 ### Python API
@@ -344,6 +363,115 @@ export SEARCH_TOOLS_PROXY_LIST="http://proxy1:8080,http://proxy2:8080"
 🎉 **重大突破**: 所有 6 个数据源现在都实现了 100% 稳定性！
 - **PubMed**: 通过 Europe PMC 后备策略彻底解决 API 密钥问题
 - **ClinicalTrials**: 通过 NIH Reporter API 完全避免 403 错误
+
+## 🚨 故障排除
+
+### 常见问题
+
+#### 1. Web界面错误: "Cannot read properties of undefined"
+**问题**: 前端JavaScript错误，无法读取响应数据
+**解决方案**:
+```bash
+# 确保使用最新版本
+git pull origin main
+
+# 重新启动服务
+python app.py
+```
+
+#### 2. 500 Internal Server Error
+**问题**: API内部服务器错误
+**解决方案**:
+```bash
+# 检查Python路径
+export PYTHONPATH=src  # Linux/Mac
+$env:PYTHONPATH = "src"  # Windows PowerShell
+
+# 重新安装依赖
+pip install -e .
+pip install numpy
+
+# 重新启动服务
+python app.py
+```
+
+#### 3. 模块导入错误
+**问题**: `ModuleNotFoundError: No module named 'searchtools'`
+**解决方案**:
+```bash
+# 设置Python路径
+export PYTHONPATH=src
+
+# 或者重新安装项目
+pip install -e .
+```
+
+#### 4. 搜索超时或无结果
+**问题**: 网络连接问题或API限制
+**解决方案**:
+```bash
+# 检查网络连接
+curl -I https://api.semanticscholar.org
+
+# 配置代理（如需要）
+export HTTP_PROXY=http://proxy:8080
+export HTTPS_PROXY=http://proxy:8080
+
+# 增加超时时间
+export SEARCH_TOOLS_DEFAULT_TIMEOUT=60
+```
+
+#### 5. 内存不足
+**问题**: 系统内存不足导致搜索失败
+**解决方案**:
+```bash
+# 减少并发请求数
+export SEARCH_TOOLS_MAX_CONCURRENT_REQUESTS=3
+
+# 减少结果数量
+# 在搜索时设置较小的max_results值
+```
+
+### 调试技巧
+
+#### 启用详细日志
+```bash
+# 设置日志级别
+export SEARCH_TOOLS_LOG_LEVEL=DEBUG
+
+# 启动服务
+python app.py
+```
+
+#### 测试各个组件
+```bash
+# 测试基础搜索
+python test_rerank.py
+
+# 测试API功能
+python test_api_rerank.py
+
+# 测试稳定性
+python test_stability.py
+```
+
+#### 检查服务状态
+```bash
+# 检查服务是否运行
+curl http://localhost:8000/
+
+# 测试搜索API
+curl -X POST "http://localhost:8000/search" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "test", "max_results": 1}'
+```
+
+### 获取帮助
+
+如果遇到其他问题，请：
+1. 查看 [详细故障排除指南](docs/TROUBLESHOOTING.md)
+2. 检查 [GitHub Issues](https://github.com/nomomoko/searchTools-main/issues)
+3. 提交新的 Issue 描述问题
 
 ## 🤝 贡献
 

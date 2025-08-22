@@ -315,12 +315,12 @@ async def root():
                 
                 // 显示统计信息
                 statsDiv.innerHTML = `
-                    <strong>搜索查询:</strong> ${data.query} | 
-                    <strong>结果数量:</strong> ${data.total_results} | 
-                    <strong>搜索时间:</strong> ${data.search_time}秒 | 
-                    <strong>去重统计:</strong> 总重复: ${data.duplicate_stats.total}, 
-                    DOI重复: ${data.duplicate_stats.by_doi}, 
-                    标题重复: ${data.duplicate_stats.by_title}
+                    <strong>搜索查询:</strong> ${data.query} |
+                    <strong>结果数量:</strong> ${data.total_results} |
+                    <strong>搜索时间:</strong> ${data.performance.total_time}秒 |
+                    <strong>去重统计:</strong> 总重复: ${data.deduplication.total},
+                    DOI重复: ${data.deduplication.by_doi},
+                    标题重复: ${data.deduplication.by_title_author || 0}
                 `;
                 statsDiv.style.display = 'block';
                 
@@ -376,7 +376,7 @@ async def get_sources():
     return {"available_sources": sources, "total_sources": len(sources)}
 
 
-@app.post("/search", response_model=SearchResponse)
+@app.post("/search")
 async def search_and_deduplicate(request: SearchRequest):
     """
     执行异步搜索和去重
@@ -458,103 +458,84 @@ async def search_and_deduplicate(request: SearchRequest):
         # 转换为响应格式
         response_results = []
         for i, result in enumerate(deduplicated_results):
-            # 构建评分详情
-            scores = ScoreDetails(
-                relevance=getattr(result, 'relevance_score', None),
-                authority=getattr(result, 'authority_score', None),
-                recency=getattr(result, 'recency_score', None),
-                quality=getattr(result, 'quality_score', None),
-                final=getattr(result, 'final_score', None),
-                bm25_score=getattr(result, 'bm25_score', None),
-                tfidf_score=getattr(result, 'tfidf_score', None),
-                semantic_score=getattr(result, 'semantic_score', None),
-                ml_score=getattr(result, 'ml_score', None)
-            )
+            # 构建评分详情（简化版本，避免None值问题）
+            scores = {}
+            if hasattr(result, 'relevance_score') and result.relevance_score is not None:
+                scores['relevance'] = result.relevance_score
+            if hasattr(result, 'authority_score') and result.authority_score is not None:
+                scores['authority'] = result.authority_score
+            if hasattr(result, 'recency_score') and result.recency_score is not None:
+                scores['recency'] = result.recency_score
+            if hasattr(result, 'quality_score') and result.quality_score is not None:
+                scores['quality'] = result.quality_score
+            if hasattr(result, 'final_score') and result.final_score is not None:
+                scores['final'] = result.final_score
 
-            # 构建元数据
-            metadata = ResultMetadata(
-                source_rank=i + 1,
-                rerank_position=i + 1,
-                confidence=getattr(result, 'confidence', None),
-                relevance_factors=[],  # 可以后续添加具体因子
-                quality_indicators={
-                    'has_doi': bool(result.doi),
-                    'has_pmid': bool(result.pmid),
-                    'has_abstract': bool(result.abstract),
-                    'citation_count': result.citations or 0
-                }
-            )
+            # 构建元数据（简化版本）
+            metadata = {
+                "source_rank": i + 1,
+                "rerank_position": i + 1
+            }
 
-            response_results.append(
-                SearchResultResponse(
-                    title=result.title,
-                    authors=result.authors,
-                    journal=result.journal,
-                    year=result.year,
-                    citations=result.citations,
-                    doi=result.doi,
-                    pmid=result.pmid,
-                    pmcid=result.pmcid,
-                    published_date=result.published_date,
-                    url=result.url,
-                    abstract=result.abstract,
-                    source=result.source,
-                    nct_id=getattr(result, 'nct_id', None),
-                    status=getattr(result, 'status', None),
-                    conditions=getattr(result, 'conditions', None),
-                    interventions=getattr(result, 'interventions', None),
-                    scores=scores,
-                    metadata=metadata
-                ))
+            # 简化的结果对象
+            response_results.append({
+                "title": result.title,
+                "authors": result.authors,
+                "journal": result.journal,
+                "year": result.year,
+                "citations": result.citations,
+                "doi": result.doi,
+                "pmid": result.pmid,
+                "pmcid": getattr(result, 'pmcid', None),
+                "published_date": result.published_date,
+                "url": result.url,
+                "abstract": result.abstract,
+                "source": result.source,
+                "nct_id": getattr(result, 'nct_id', None),
+                "status": getattr(result, 'status', None),
+                "conditions": getattr(result, 'conditions', None),
+                "interventions": getattr(result, 'interventions', None),
+                "scores": scores,
+                "metadata": metadata
+            })
 
         search_time = time.time() - start_time
 
-        # 构建搜索统计信息
-        stats = SearchStats(
-            total_sources=len(search_manager.async_sources) if hasattr(search_manager, 'async_sources') else 6,
-            successful_sources=len([s for s in all_results if s]),  # 简化统计
-            failed_sources=0,  # 需要从搜索管理器获取
-            total_raw_results=len(all_results),
-            after_deduplication=len(deduplicated_results),
-            after_rerank=len(response_results),
-            search_time_breakdown={
-                'total': round(search_time, 3),
-                'search': round(search_time * 0.7, 3),  # 估算
-                'deduplication': round(search_time * 0.2, 3),
-                'rerank': round(search_time * 0.1, 3)
-            }
-        )
-
-        # 构建重排序信息
-        rerank_info = RerankInfo(
-            enabled=rerank_enabled,
-            strategy=sort_strategy,
-            algorithm="advanced_ml_v2" if rerank_enabled else "none",
-            weights={
-                'relevance': 0.40,
-                'authority': 0.30,
-                'recency': 0.20,
-                'quality': 0.10
+        # 简化的响应
+        return {
+            "query": request.query,
+            "timestamp": datetime.now().isoformat(),
+            "total_results": len(response_results),
+            "results": response_results,
+            "stats": {
+                "total_sources": 6,
+                "successful_sources": len(all_results),
+                "failed_sources": 0,
+                "total_raw_results": len(all_results),
+                "after_deduplication": len(deduplicated_results),
+                "after_rerank": len(response_results),
+                "search_time_breakdown": {}
             },
-            performance_metrics={
-                'processing_time': round(search_time * 0.1, 3) if rerank_enabled else 0,
-                'results_reordered': len(response_results) if rerank_enabled else 0
+            "deduplication": {
+                "total": len(all_results),
+                "by_doi": duplicate_stats.get('by_doi', 0),
+                "by_pmid": duplicate_stats.get('by_pmid', 0),
+                "by_nctid": duplicate_stats.get('by_nctid', 0),
+                "by_title_author": duplicate_stats.get('by_title_author', 0),
+                "kept": len(deduplicated_results)
+            },
+            "rerank": {
+                "enabled": rerank_enabled,
+                "strategy": sort_strategy,
+                "algorithm": "advanced_ml_v2" if rerank_enabled else "none",
+                "weights": {},
+                "performance_metrics": {}
+            },
+            "performance": {
+                "total_time": round(search_time, 3),
+                "results_per_second": round(len(response_results) / max(search_time, 0.001), 2)
             }
-        )
-
-        return SearchResponse(
-            query=request.query,
-            timestamp=datetime.now().isoformat(),
-            total_results=len(response_results),
-            results=response_results,
-            stats=stats,
-            deduplication=duplicate_stats,
-            rerank=rerank_info,
-            performance={
-                'total_time': round(search_time, 3),
-                'results_per_second': round(len(response_results) / max(search_time, 0.001), 2)
-            }
-        )
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"搜索过程中发生错误: {str(e)}")
