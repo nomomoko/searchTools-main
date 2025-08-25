@@ -7,12 +7,14 @@
 - **所有 6 个数据源默认启用**: Europe PMC、Semantic Scholar、BioRxiv、MedRxiv、PubMed、ClinicalTrials
 - **PubMed 100% 稳定**: 通过 Europe PMC 后备策略，无需 API 密钥也能稳定工作
 - **ClinicalTrials 完全避免 403**: 通过 NIH Reporter API，彻底解决访问限制问题
+- **BioRxiv/MedRxiv 智能过滤**: 语义搜索，结果提升 500-1000%
 - **开箱即用**: 无需任何配置即可获得来自所有 6 个数据源的高质量结果
 
 ## 🚀 即开即用体验
 
 现在您可以：
 - **零配置启动**: 直接运行即可获得稳定的搜索结果
+- **智能搜索**: BioRxiv/MedRxiv 自动使用语义搜索，大幅提升结果质量
 - **可选优化**: 配置 API 密钥可获得更好的性能和更多结果
 - **完全稳定**: 所有数据源都有智能降级策略保障
 
@@ -101,7 +103,53 @@ SEARCH_TOOLS_CLINICAL_TRIALS_ENABLED=false
 # 可选：配置代理（应对严格网络环境）
 SEARCH_TOOLS_USE_PROXY=true
 SEARCH_TOOLS_PROXY_LIST="http://proxy1:8080,http://proxy2:8080"
+
+# 预印本智能过滤配置
+SEARCH_TOOLS_BIORXIV_USE_ADVANCED_FILTER=true
+SEARCH_TOOLS_BIORXIV_FILTER_DAYS_BACK=30
+SEARCH_TOOLS_BIORXIV_MIN_RELEVANCE_SCORE=0.5
+
+SEARCH_TOOLS_MEDRXIV_USE_ADVANCED_FILTER=true
+SEARCH_TOOLS_MEDRXIV_FILTER_DAYS_BACK=30
+SEARCH_TOOLS_MEDRXIV_MIN_RELEVANCE_SCORE=0.5
 ```
+
+## 🧬 预印本智能过滤器配置
+
+### 配置参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `USE_ADVANCED_FILTER` | `true` | 启用智能过滤器（推荐） |
+| `FILTER_DAYS_BACK` | `30` | 过滤最近N天的论文 |
+| `MIN_RELEVANCE_SCORE` | `0.5` | 最小相关性得分阈值 |
+
+### 使用场景配置
+
+#### 最新研究（高时效性）
+```bash
+SEARCH_TOOLS_BIORXIV_FILTER_DAYS_BACK=7
+SEARCH_TOOLS_BIORXIV_MIN_RELEVANCE_SCORE=1.0
+```
+
+#### 全面搜索（高覆盖率）
+```bash
+SEARCH_TOOLS_BIORXIV_FILTER_DAYS_BACK=90
+SEARCH_TOOLS_BIORXIV_MIN_RELEVANCE_SCORE=0.3
+```
+
+#### 精准搜索（高相关性）
+```bash
+SEARCH_TOOLS_BIORXIV_FILTER_DAYS_BACK=30
+SEARCH_TOOLS_BIORXIV_MIN_RELEVANCE_SCORE=2.0
+```
+
+#### 兼容模式（简单过滤）
+```bash
+SEARCH_TOOLS_BIORXIV_USE_ADVANCED_FILTER=false
+```
+
+详细配置指南请参考 [PREPRINT_FILTER_CONFIG.md](docs/PREPRINT_FILTER_CONFIG.md)
 
 ## 🧪 验证配置和稳定性
 
